@@ -1,30 +1,55 @@
 package main
 
 import (
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 )
 
 const baseUrl="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
+
+type Part struct{
+	Index int
+	Start int64
+	End int64
+}
+
 func main() {
-	req,err:=http.NewRequest("GET",baseUrl,nil)
+	p1:=Part{Index: 0,Start: 0,End: 500}
+	downloadPart(baseUrl,p1)
+
+	p2:=Part{Index: 1,Start: 501,End: 1024}
+	downloadPart(baseUrl,p2)
+}
+
+func downloadPart(url string,part Part){
+	req,err:=http.NewRequest("GET",url,nil)
 	if err!=nil{
-		panic(err)
+		log.Fatal(err)
 	}
-	req.Header.Set("Range","bytes=0-1023")
+
+	rangeHeader:=fmt.Sprintf("bytes=%d-%d",part.Start,part.End)
+	req.Header.Set("Range",rangeHeader)
 
 	client:=&http.Client{}
 	res,err:=client.Do(req)
 	if err!=nil{
-		panic(err)
+		log.Fatal(err)
 	}
+
 	defer res.Body.Close()
 
-	file,err:=os.Create("part1.pdf")
+	fileName:=fmt.Sprintf("part_%d.pdf",part.Index)
+	file,err:=os.Create(fileName)
 	if err!=nil{
-		panic(err)
+		log.Fatal(err)
 	}
+
+	defer file.Close()
+
 	io.Copy(file,res.Body)
 
+	fmt.Println("Download finished: ",fileName)
 }
