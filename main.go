@@ -25,11 +25,14 @@ func main() {
 }
 
 func downloadPart(url string,part Part){
+
+	//Used NewRequest instead of Get() to add custom headers
 	req,err:=http.NewRequest("GET",url,nil)
 	if err!=nil{
 		log.Fatal(err)
 	}
 
+	//Sprintf returns formatted string
 	rangeHeader:=fmt.Sprintf("bytes=%d-%d",part.Start,part.End)
 	req.Header.Set("Range",rangeHeader)
 
@@ -39,6 +42,7 @@ func downloadPart(url string,part Part){
 		log.Fatal(err)
 	}
 
+	//Used defer so that the res object is closed after its functioning
 	defer res.Body.Close()
 
 	fileName:=fmt.Sprintf("part_%d.pdf",part.Index)
