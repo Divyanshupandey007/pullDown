@@ -32,7 +32,7 @@ func downloadPart(url string,part Part){
 		log.Fatal(err)
 	}
 
-	//Sprintf returns formatted string
+	//Used Sprintf to return formatted string
 	rangeHeader:=fmt.Sprintf("bytes=%d-%d",part.Start,part.End)
 	req.Header.Set("Range",rangeHeader)
 
