@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 )
 
 const baseUrl="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
@@ -24,7 +25,13 @@ func main() {
 
 	parts:=calculateParts(res.ContentLength,4)
 
-	fmt.Println(parts)
+	//For implementing concurrency
+	var wg sync.WaitGroup
+	for i:=range parts{
+		wg.Add(1) //Increment the goroutine counter
+		go downloadPart(baseUrl,parts[i],&wg) //&wg is reference for the pointer
+	}
+	wg.Wait() //It will wait for all parts to download
 }
 
 //Logic for calculating size of each part
@@ -45,7 +52,8 @@ func calculateParts(totalSize int64,numParts int) []Part{
 	return parts
 }
 
-func downloadPart(url string,part Part){
+func downloadPart(url string,part Part,wg *sync.WaitGroup){
+	defer wg.Done()
 
 	//Used NewRequest instead of Get() to add custom headers
 	req,err:=http.NewRequest("GET",url,nil)
