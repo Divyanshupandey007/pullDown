@@ -17,11 +17,32 @@ type Part struct{
 }
 
 func main() {
-	p1:=Part{Index: 0,Start: 0,End: 500}
-	downloadPart(baseUrl,p1)
+	res,err:=http.Head(baseUrl)
+	if err!=nil{
+		log.Fatal(err)
+	}
 
-	p2:=Part{Index: 1,Start: 501,End: 1024}
-	downloadPart(baseUrl,p2)
+	parts:=calculateParts(res.ContentLength,4)
+
+	fmt.Println(parts)
+}
+
+//Logic for calculating size of each part
+func calculateParts(totalSize int64,numParts int) []Part{
+	var parts []Part
+	chunkSize:=totalSize/int64(numParts)
+	
+	for i:=range numParts{
+		start:=int64(i)*chunkSize
+		end:=start+chunkSize-1
+
+		if i==numParts-1{
+			end=totalSize-1
+		}
+
+		parts=append(parts, Part{Index: i,Start: start,End: end})
+	}
+	return parts
 }
 
 func downloadPart(url string,part Part){
