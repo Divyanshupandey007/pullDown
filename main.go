@@ -9,8 +9,6 @@ import (
 	"sync"
 )
 
-const baseUrl="https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-
 type Part struct{
 	Index int
 	Start int64
@@ -18,7 +16,14 @@ type Part struct{
 }
 
 func main() {
-	res,err:=http.Head(baseUrl)
+	if len(os.Args)<2{
+		fmt.Println("Please provide a URL")
+		os.Exit(1)
+	}
+
+	url:=os.Args[1]
+
+	res,err:=http.Head(url)
 	if err!=nil{
 		log.Fatal(err)
 	}
@@ -29,7 +34,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i:=range parts{
 		wg.Add(1) //Increment the goroutine counter
-		go downloadPart(baseUrl,parts[i],&wg) //&wg is reference for the pointer
+		go downloadPart(url,parts[i],&wg) //&wg is reference for the pointer
 	}
 	wg.Wait() //It will wait for all parts to download
 
