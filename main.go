@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"sync"
 )
 
@@ -21,7 +22,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	//Take the link from cli
 	url:=os.Args[1]
+
+	//Extracts the file name from the URL
+	fileName:=path.Base(url)
 
 	res,err:=http.Head(url)
 	if err!=nil{
@@ -33,12 +38,14 @@ func main() {
 	//For implementing concurrency
 	var wg sync.WaitGroup
 	for i:=range parts{
-		wg.Add(1) //Increment the goroutine counter
-		go downloadPart(url,parts[i],&wg) //&wg is reference for the pointer
+		//Increment the goroutine counter
+		wg.Add(1)
+		//&wg is reference for the pointer
+		go downloadPart(url,parts[i],&wg)
 	}
 	wg.Wait() //It will wait for all parts to download
 
-	mergeParts(len(parts))
+	mergeParts(fileName,len(parts))
 }
 
 //Logic for calculating size of each part
@@ -81,7 +88,7 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup){
 	//Used defer so that the res object is closed after its functioning
 	defer res.Body.Close()
 
-	fileName:=fmt.Sprintf("part_%d.pdf",part.Index)
+	fileName:=fmt.Sprintf("part_%d.tmp",part.Index)
 	file,err:=os.Create(fileName)
 	if err!=nil{
 		log.Fatal(err)
@@ -94,16 +101,16 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup){
 	fmt.Println("Download finished: ",fileName)
 }
 
-func mergeParts(numParts int){
+func mergeParts(fileName string,numParts int){
 	//Create the final file
-	outFile,err:=os.Create("final.pdf")
+	outFile,err:=os.Create(fileName)
 	if err!=nil{
 		log.Fatal(err)
 	}
 	defer outFile.Close()
 
 	for i:=0;i<numParts;i++{
-		partFileName:=fmt.Sprintf("part_%d.pdf",i)
+		partFileName:=fmt.Sprintf("part_%d.tmp",i)
 
 		//Reading the partial files
 		partFile,err:=os.Open(partFileName)
