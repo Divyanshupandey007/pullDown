@@ -32,6 +32,8 @@ func main() {
 		go downloadPart(baseUrl,parts[i],&wg) //&wg is reference for the pointer
 	}
 	wg.Wait() //It will wait for all parts to download
+
+	mergeParts(len(parts))
 }
 
 //Logic for calculating size of each part
@@ -85,4 +87,30 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup){
 	io.Copy(file,res.Body)
 
 	fmt.Println("Download finished: ",fileName)
+}
+
+func mergeParts(numParts int){
+	//Create the final file
+	outFile,err:=os.Create("final.pdf")
+	if err!=nil{
+		log.Fatal(err)
+	}
+	defer outFile.Close()
+
+	for i:=0;i<numParts;i++{
+		partFileName:=fmt.Sprintf("part_%d.pdf",i)
+
+		//Reading the partial files
+		partFile,err:=os.Open(partFileName)
+
+		if err!=nil{
+			log.Fatal(err)
+		}
+
+		io.Copy(outFile,partFile)
+		partFile.Close()
+		//Remove the partial files
+		os.Remove(partFileName)
+	}
+	fmt.Println("Files merged")
 }
