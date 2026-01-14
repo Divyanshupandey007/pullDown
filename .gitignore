@@ -1,5 +1,25 @@
-pullDown
+# --- Golang Ignores ---
+# Binaries and compiled exe
+*.sum
+*.exe
+*.dll
+pulldown
+
+# Temporary download files
 *.tmp
 *.pdf
 *.jpg
 *.png
+*.zip
+
+# --- Angular/Node Ignores ---
+# Dependencies (CRITICAL: Do not upload this folder)
+node_modules/
+
+# Angular build output
+dist/
+.angular/
+
+# OS junk
+.DS_Store
+Thumbs.db
