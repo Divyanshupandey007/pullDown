@@ -1,6 +1,5 @@
 # --- Golang Ignores ---
 # Binaries and compiled exe
-*.sum
 *.exe
 *.dll
 pulldown

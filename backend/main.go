@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -51,8 +50,13 @@ func startDownloadHandler(c *gin.Context){
 		return
 	}
 
+	//Function runs in background to avoid starvation 
+	go processDownload(req.Url)
+
 	//Response
-	c.JSON(http.StatusCreated,gin.H{"message":"Download started"})
-	fmt.Println(req.Url)
+	c.JSON(http.StatusCreated,gin.H{
+		"message":"Download started",
+		"url":req.Url,
+	})
 
 }
