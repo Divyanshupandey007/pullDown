@@ -10,7 +10,7 @@ A Full-Stack Download Manager built with Go and Angular.
 
 **1. Start Backend:**
 cd backend
-go run main.go
+go run .
 
 **2. Start Frontend:**
 cd frontend

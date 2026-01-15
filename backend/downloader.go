@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 )
 
 //Part struct for handling chunks
@@ -18,7 +19,7 @@ type Part struct{
 }
 
 func processDownload(url string) {
-	fmt.Println("Staring download for: ",url)
+	fmt.Println("Starting download for: ",url)
 
 	res,err:=http.Head(url)
 	if err!=nil{
@@ -30,18 +31,23 @@ func processDownload(url string) {
 
 	parts:=calculateParts(res.ContentLength,4)
 
+	//Create shared counter
+	var downloadBytes int64=0
+
 	//For implementing concurrency
 	var wg sync.WaitGroup
 	for i:=range parts{
 		//Increment the goroutine counter
 		wg.Add(1)
 		//&wg is reference for the pointer
-		go downloadPart(url,parts[i],&wg)
+		go downloadPart(url,parts[i],&wg,&downloadBytes,res.ContentLength)
 	}
-	wg.Wait() //It will wait for all parts to download
+
+	//It will wait for all parts to download
+	wg.Wait() 
 
 	mergeParts(fileName,len(parts))
-	fmt.Println("Download Completed for",fileName)
+	fmt.Println("Download Complete")
 }
 
 //Logic for calculating size of each part
@@ -62,7 +68,7 @@ func calculateParts(totalSize int64,numParts int) []Part{
 	return parts
 }
 
-func downloadPart(url string,part Part,wg *sync.WaitGroup){
+func downloadPart(url string,part Part,wg *sync.WaitGroup,progress *int64,totalSize int64){
 	defer wg.Done()
 
 	//Used NewRequest instead of Get() to add custom headers
@@ -95,9 +101,32 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup){
 
 	defer file.Close()
 
-	io.Copy(file,res.Body)
+	//Create buffer
+	buf:=make([]byte, 32*1024)
 
-	fmt.Println("Part finished: ",fileName)
+	for{
+		//Read data
+		n,err:=res.Body.Read(buf)
+
+		if err!=nil{
+			if err==io.EOF{
+				break
+			}
+			log.Println("Error reading: ",err)
+			return
+		}
+
+		//Write data to file upto 'n' bytes
+		if n>0{
+			file.Write(buf[:n])
+
+			//Safely add 'n' bytes to shared counter
+			current:=atomic.AddInt64(progress,int64(n))
+			percent:=float64(current)/float64(totalSize) * 100
+
+			fmt.Printf("Downloading...%.2f%%",percent)
+		}
+	}
 }
 
 func mergeParts(fileName string,numParts int){
