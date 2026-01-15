@@ -1,15 +1,17 @@
 # Pulldown
 
-A concurrent file download manager built in Go. It splits files into chunks and downloads them in parallel to maximize speed.
+A Full-Stack Download Manager built with Go and Angular.
 
-## Features
-- 🚀 Concurrent downloading (4 connections)
-- 🧩 Automatic file chunking and merging
-- 🧹 Auto-cleanup of temporary parts
-- 📂 Dynamic filename extraction
+## Structure
+- **/backend**: Golang API handling concurrent downloads.
+- **/frontend**: Angular UI for managing downloads.
 
-## Usage
+## How to Run
 
-1. **Build the project:**
-   ```bash
-   go build -o pulldown
+**1. Start Backend:**
+cd backend
+go run main.go
+
+**2. Start Frontend:**
+cd frontend
+ng serve -o
