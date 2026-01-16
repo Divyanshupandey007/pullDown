@@ -1,14 +1,24 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
 //Map JSON data from frontend
 type DownloadRequest struct{
 	Url string `json:"url"`
+}
+
+var wsupgrader=websocket.Upgrader{
+	ReadBufferSize: 1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool{
+		return true
+	},
 }
 
 func main() {
@@ -28,6 +38,8 @@ func main() {
 		}
 	})
 
+	r.GET("/ws",wsHandler)
+
 	r.GET("/ping",func(c *gin.Context){
 		c.JSON(200,gin.H{
 			"message":"pong",
@@ -38,6 +50,29 @@ func main() {
 
 	//Run Server
 	r.Run()
+}
+
+func wsHandler(c *gin.Context){
+
+	//Websocket connection
+	con,err:=wsupgrader.Upgrade(c.Writer,c.Request,nil)
+	if err!=nil{
+		log.Println("Error in connection: ",err)
+		return
+	}
+	defer con.Close()
+
+	log.Println("Client connected via WebSocket!")
+
+	//For keeping connection alive
+	for{
+		_,_,err:=con.ReadMessage()
+		if err!=nil{
+			log.Println("Client disconnected")
+			break
+		}
+	}
+
 }
 
 //Handler method: Starts when frontend sends the request
