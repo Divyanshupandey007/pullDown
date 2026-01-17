@@ -40,7 +40,7 @@ func processDownload(url string) {
 		//Increment the goroutine counter
 		wg.Add(1)
 		//&wg is reference for the pointer
-		go downloadPart(url,parts[i],&wg,&downloadBytes,res.ContentLength)
+		go downloadPart(url,fileName,parts[i],&wg,&downloadBytes,res.ContentLength)
 	}
 
 	//It will wait for all parts to download
@@ -68,7 +68,7 @@ func calculateParts(totalSize int64,numParts int) []Part{
 	return parts
 }
 
-func downloadPart(url string,part Part,wg *sync.WaitGroup,progress *int64,totalSize int64){
+func downloadPart(url string,fileName string,part Part,wg *sync.WaitGroup,progress *int64,totalSize int64){
 	defer wg.Done()
 
 	//Used NewRequest instead of Get() to add custom headers
@@ -92,8 +92,8 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup,progress *int64,totalS
 	//Used defer so that the res object is closed after its functioning
 	defer res.Body.Close()
 
-	fileName:=fmt.Sprintf("part_%d.tmp",part.Index)
-	file,err:=os.Create(fileName)
+	tmpFile:=fmt.Sprintf("part_%d.tmp",part.Index)
+	file,err:=os.Create(tmpFile)
 	if err!=nil{
 		log.Println("Error creating temp file: ",err)
 		return
@@ -124,7 +124,7 @@ func downloadPart(url string,part Part,wg *sync.WaitGroup,progress *int64,totalS
 			current:=atomic.AddInt64(progress,int64(n))
 			percent:=float64(current)/float64(totalSize) * 100
 
-			fmt.Printf("Downloading...%.2f%%",percent)
+			SendProgress(fileName,percent)
 		}
 	}
 }

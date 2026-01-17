@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -13,6 +14,12 @@ type DownloadRequest struct{
 	Url string `json:"url"`
 }
 
+var(
+	activeCon *websocket.Conn
+	conMutex sync.Mutex
+)
+
+//Upgrade http request to websocket
 var wsupgrader=websocket.Upgrader{
 	ReadBufferSize: 1024,
 	WriteBufferSize: 1024,
@@ -40,12 +47,6 @@ func main() {
 
 	r.GET("/ws",wsHandler)
 
-	r.GET("/ping",func(c *gin.Context){
-		c.JSON(200,gin.H{
-			"message":"pong",
-		})
-	})
-
 	r.POST("/download",startDownloadHandler)
 
 	//Run Server
@@ -60,19 +61,54 @@ func wsHandler(c *gin.Context){
 		log.Println("Error in connection: ",err)
 		return
 	}
-	defer con.Close()
+
+	//Save the connection
+	conMutex.Lock()
+	activeCon=con
+	conMutex.Unlock()
 
 	log.Println("Client connected via WebSocket!")
+
+	defer func(){
+		conMutex.Lock()
+		//Clear the active connection
+		activeCon=nil
+		conMutex.Unlock()
+		con.Close()
+	}()
 
 	//For keeping connection alive
 	for{
 		_,_,err:=con.ReadMessage()
 		if err!=nil{
-			log.Println("Client disconnected")
 			break
 		}
 	}
 
+}
+
+//Bridge function
+func SendProgress(fileName string,percent float64){
+	conMutex.Lock()
+	defer conMutex.Unlock()
+
+	if activeCon==nil{
+		return
+	}
+
+	msg:=gin.H{
+		"event":"progress",
+		"fileName":fileName,
+		"percent":percent,
+	}
+
+	err:=activeCon.WriteJSON(msg)
+
+	if err!=nil{
+		log.Println("Error sending in progress: ",err)
+		activeCon.Close()
+		activeCon=nil
+	}
 }
 
 //Handler method: Starts when frontend sends the request
