@@ -1,12 +1,28 @@
-<div class="manager-container">
+<div class="manager-container" style="text-align: center; font-family: sans-serif; margin-top: 50px;">
   <h2>PullDown</h2>
   
-  <div class="input-group">
+  <!-- Input Section -->
+  <div class="input-group" style="margin-bottom: 20px;">
     <input 
       type="text" 
       [(ngModel)]="url" 
-      placeholder="Paste link here..."
+      placeholder="Paste link here..." 
+      style="padding: 10px; width: 300px; font-size: 16px;"
     >
-    <button (click)="startDownload()">Download</button>
+    <button 
+      (click)="startDownload()" 
+      style="padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; cursor: pointer;">
+      Download
+    </button>
+  </div>
+
+  <!-- Progress Section (Only shows if progress > 0) -->
+  <div *ngIf="progress > 0" class="progress-area" style="width: 400px; margin: 0 auto; text-align: left;">
+    <p>Downloading: <strong>{{ currentFile }}</strong></p>
+    
+    <!-- The Progress Bar -->
+    <progress [value]="progress" max="100" style="width: 100%; height: 20px;"></progress>
+    
+    <p style="text-align: right;">{{ progress | number:'1.0-2' }}%</p>
   </div>
 </div>

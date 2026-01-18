@@ -28,6 +28,7 @@ var wsupgrader=websocket.Upgrader{
 	},
 }
 
+
 func main() {
 
 	//Router setup
@@ -87,6 +88,8 @@ func wsHandler(c *gin.Context){
 
 }
 
+var lastBroadcast int=-1
+
 //Bridge function
 func SendProgress(fileName string,percent float64){
 	conMutex.Lock()
@@ -95,6 +98,14 @@ func SendProgress(fileName string,percent float64){
 	if activeCon==nil{
 		return
 	}
+
+	//Optimization
+	currInt:=int(percent)
+	if currInt==lastBroadcast && percent<100.00{
+		return
+	}
+
+	lastBroadcast=currInt
 
 	msg:=gin.H{
 		"event":"progress",

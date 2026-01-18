@@ -1,37 +1,42 @@
 import { Injectable } from '@angular/core';
+import { Subject } from 'rxjs';
+
+export interface ProgressMessage{
+  fileName: string
+  percent: number
+}
 
 @Injectable({
   providedIn: 'root',
 })
 export class Websocket {
   private socket: WebSocket | undefined;
+  
+  // Create a "News Channel" for progress updates
+  public progressUpdates$ = new Subject<ProgressMessage>();
 
   constructor() { }
 
   connect() {
-    console.log('Attempting to connect to WebSocket...');
-    
-    // Connect to the Go WebSocket Route
     this.socket = new WebSocket('ws://localhost:8080/ws');
 
-    // Event: Connection Established
     this.socket.onopen = () => {
-      console.log('✅ WebSocket Connected to Go Backend');
+      console.log('✅ WebSocket Connected');
     };
 
-    // Event: Message Received from Go
     this.socket.onmessage = (event) => {
-      console.log('📩 Message from Go:', event.data);
+      // 1. Parse the JSON from Go
+      const data = JSON.parse(event.data);
+      
+      // 2. If it is a progress event, publish it to the channel
+      if (data.event === 'progress') {
+        this.progressUpdates$.next({
+          fileName: data.fileName,
+          percent: data.percent
+        });
+      }
     };
 
-    // Event: Connection Closed
-    this.socket.onclose = (event) => {
-      console.log('❌ WebSocket Disconnected', event);
-    };
-
-    // Event: Error
-    this.socket.onerror = (error) => {
-      console.error('⚠️ WebSocket Error:', error);
-    };
+    this.socket.onclose = () => console.log('❌ Disconnected');
   }
 }

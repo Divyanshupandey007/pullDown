@@ -1,38 +1,46 @@
 import { HttpClient } from '@angular/common/http';
-import { Component } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ProgressMessage, Websocket } from '../../services/websocket';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-download-manager',
-  imports: [FormsModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './download-manager.html',
   styleUrl: './download-manager.css',
 })
-export class DownloadManager {
-  url: string = ''; // Holds the input value
+export class DownloadManager implements OnInit {
+  url: string = '';
+  progress: number = 0;
+  currentFile: string = '';
 
-  constructor(private http: HttpClient) {}
+  constructor(
+    private http: HttpClient,
+    private wsService: Websocket,
+    private cdr: ChangeDetectorRef
+  ) { }
+
+  ngOnInit() {
+
+    this.wsService.progressUpdates$.subscribe((msg: ProgressMessage) => {
+
+      this.progress = msg.percent;
+      this.currentFile = msg.fileName;
+
+      // Explicitly trigger change detection for this component
+      this.cdr.detectChanges();
+    });
+  }
 
   startDownload() {
-    if (!this.url) {
-      alert('Please enter a URL');
-      return;
-    }
+    if (!this.url) return;
+    this.progress = 0;
 
-    console.log("Sending to backend:", this.url);
-
-    // Send POST request to Go Backend
     this.http.post('http://localhost:8080/download', { url: this.url })
       .subscribe({
-        next: (res) => {
-          console.log('Backend response:', res);
-          alert('Download Started successfully!');
-          this.url = ''; // Clear input
-        },
-        error: (err) => {
-          console.error('Error:', err);
-          alert('Failed to connect to Backend.');
-        }
+        next: (res) => console.log('Started'),
+        error: (err) => alert('Error connecting to backend')
       });
   }
 }
