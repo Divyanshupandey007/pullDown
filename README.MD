@@ -137,7 +137,7 @@ Click Download.
 
 Watch the progress bar update in real-time as the backend fetches and merges the file.
 
-Check the backend/ folder to see your downloaded file.$$
+Check the backend/ folder to see your downloaded file.
 
 ## 🧠 Technical Highlights (What I Learned)
 
