@@ -10,6 +10,8 @@ import (
 	"path"
 	"sync"
 	"sync/atomic"
+
+	"github.com/kkdai/youtube/v2"
 )
 
 // Part struct for handling chunks
@@ -49,6 +51,74 @@ func processDownload(url string) {
 
 	mergeParts(fileName, len(parts))
 	fmt.Println("Download Complete")
+}
+
+func downloadYoutube(url string,fileName string){
+	fmt.Println("Starting download for:",url)
+
+	client:=youtube.Client{}
+	video,err:=client.GetVideo(url)
+	if err!=nil{
+		fmt.Println("Error getting video info:",err)
+		return
+	}
+	formats:=video.Formats.WithAudioChannels()
+	if len(formats)==0{
+		fmt.Println("Error: No video with audio found")
+		return
+	}
+	format:=&formats[0]
+	fmt.Printf("Found format: %s, Quality: %s\n",format.MimeType,format.Quality)
+
+	stream,_,err:=client.GetStream(video,format)
+	if err!=nil{
+		fmt.Println("Error getting stream:",err)
+		return
+	}
+	defer stream.Close()
+
+	file, err := os.Create(fileName)
+	if err != nil {
+		log.Println("Error creating file: ", err)
+		return
+	}
+
+	defer file.Close()
+
+	//Create buffer
+	buf := make([]byte, 32*1024)
+	var totalBytes int64=0
+	totalSize:=format.ContentLength
+	for {
+		//Read data
+		n, err := stream.Read(buf)
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Println("Error reading stream:", err)
+			return
+		}
+
+		//Write data to file upto 'n' bytes
+		if n > 0 {
+			file.Write(buf[:n])
+			totalBytes+=int64(n)
+			var percent float64
+			if totalSize>0{
+				percent = float64(totalBytes) / float64(totalSize) * 100
+			}else{
+				percent = float64((totalBytes%(10*1024*1024))) / (10*1024*1024)*100
+			}
+			SendProgress(fileName, percent)
+			if totalBytes%(1024*1024)==0{
+				fmt.Printf("Downloaded: %dMB\n",totalBytes/1024/1024)
+			}
+		}
+	}
+	SendProgress(fileName,100.0)
+	fmt.Println("Download complete!")
 }
 
 // Logic for calculating size of each part

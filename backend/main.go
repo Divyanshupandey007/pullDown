@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -132,8 +133,11 @@ func startDownloadHandler(c *gin.Context){
 		return
 	}
 
-	//Function runs in background to avoid starvation 
-	go processDownload(req.Url)
+	if strings.Contains(req.Url,"youtube") || strings.Contains(req.Url,"youtu.be"){
+		go downloadYoutube(req.Url,"video.mp4")
+	}else{
+		go processDownload(req.Url)
+	}
 
 	//Response
 	c.JSON(http.StatusCreated,gin.H{
