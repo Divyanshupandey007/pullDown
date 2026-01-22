@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,11 +9,15 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/kkdai/youtube/v2"
 )
+
+//Calculate progress across restarts
+var globalTotalSize int64=0
 
 // Part struct for handling chunks
 type Part struct {
@@ -21,21 +26,44 @@ type Part struct {
 	End   int64
 }
 
-func processDownload(url string) {
-	fmt.Println("Starting download for: ", url)
+func processDownload(ctx context.Context,taskId string,downloadUrl string,customName ...string) {
+	fmt.Println("Starting/Resuming download for: ", downloadUrl)
 
-	res, err := http.Head(url)
+	res, err := http.Head(downloadUrl)
 	if err != nil {
 		log.Println("Error fetching HEAD: ", err)
 		return
 	}
 
-	fileName := path.Base(url)
+	globalTotalSize=res.ContentLength
+
+	var fileName string
+	if len(customName)>0{
+		fileName=customName[0]
+	}else{
+		fileName = path.Base(downloadUrl)
+
+		if len(fileName)>50 || strings.Contains(fileName,"."){
+			fileName="download_file.mp4"
+		}
+	}
 
 	parts := calculateParts(res.ContentLength, 4)
 
+	var initialDownloaded int64=0
+
+	for i:=range parts{
+		tmpFileName:=fmt.Sprintf("part_%d.tmp",i)
+		if stat,err:=os.Stat(tmpFileName);err==nil{
+			initialDownloaded+=stat.Size()
+		}
+	}
+
 	//Create shared counter
-	var downloadBytes int64 = 0
+	var downloadBytes=initialDownloaded
+
+	percent:=float64(initialDownloaded)/float64(res.ContentLength)*100
+	SendProgress(taskId,fileName,percent)
 
 	//For implementing concurrency
 	var wg sync.WaitGroup
@@ -43,21 +71,26 @@ func processDownload(url string) {
 		//Increment the goroutine counter
 		wg.Add(1)
 		//&wg is reference for the pointer
-		go downloadPart(url, fileName, parts[i], &wg, &downloadBytes, res.ContentLength)
+		go downloadPart(ctx,taskId,downloadUrl, fileName, parts[i], &wg, &downloadBytes, res.ContentLength)
 	}
 
 	//It will wait for all parts to download
 	wg.Wait()
 
-	mergeParts(fileName, len(parts))
-	fmt.Println("Download Complete")
+	if ctx.Err()==nil{
+		mergeParts(fileName, len(parts))
+		SendProgress(taskId,fileName,100.0)
+		fmt.Println("Download Complete")
+	}else{
+		fmt.Println("Download Paused")
+	}
 }
 
-func downloadYoutube(url string,fileName string){
-	fmt.Println("Starting download for:",url)
+func downloadYoutube(ctx context.Context,originalUrl string){
+	fmt.Println("Analyzing youtube video:",originalUrl)
 
 	client:=youtube.Client{}
-	video,err:=client.GetVideo(url)
+	video,err:=client.GetVideo(originalUrl)
 	if err!=nil{
 		fmt.Println("Error getting video info:",err)
 		return
@@ -70,55 +103,25 @@ func downloadYoutube(url string,fileName string){
 	format:=&formats[0]
 	fmt.Printf("Found format: %s, Quality: %s\n",format.MimeType,format.Quality)
 
-	stream,_,err:=client.GetStream(video,format)
+	//Get direct URL
+	streamURL,err:=client.GetStreamURL(video,format)
 	if err!=nil{
-		fmt.Println("Error getting stream:",err)
-		return
-	}
-	defer stream.Close()
-
-	file, err := os.Create(fileName)
-	if err != nil {
-		log.Println("Error creating file: ", err)
+		fmt.Println("Error getting stream URL:",err)
 		return
 	}
 
-	defer file.Close()
+	fmt.Println("Got direct stream URL....")
+	safeTitle:=sanitizeFileName(video.Title)+".mp4"
+	processDownload(ctx,originalUrl,streamURL,safeTitle)
 
-	//Create buffer
-	buf := make([]byte, 32*1024)
-	var totalBytes int64=0
-	totalSize:=format.ContentLength
-	for {
-		//Read data
-		n, err := stream.Read(buf)
+}
 
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			log.Println("Error reading stream:", err)
-			return
-		}
-
-		//Write data to file upto 'n' bytes
-		if n > 0 {
-			file.Write(buf[:n])
-			totalBytes+=int64(n)
-			var percent float64
-			if totalSize>0{
-				percent = float64(totalBytes) / float64(totalSize) * 100
-			}else{
-				percent = float64((totalBytes%(10*1024*1024))) / (10*1024*1024)*100
-			}
-			SendProgress(fileName, percent)
-			if totalBytes%(1024*1024)==0{
-				fmt.Printf("Downloaded: %dMB\n",totalBytes/1024/1024)
-			}
-		}
+func sanitizeFileName(name string) string{
+	invalidChars:=[]string{"/","\\",":","*","?","\"","<",">","|"}
+	for _,chars:=range invalidChars{
+		name=strings.ReplaceAll(name,chars,"_")
 	}
-	SendProgress(fileName,100.0)
-	fmt.Println("Download complete!")
+	return name
 }
 
 // Logic for calculating size of each part
@@ -139,23 +142,46 @@ func calculateParts(totalSize int64, numParts int) []Part {
 	return parts
 }
 
-func downloadPart(url string, fileName string, part Part, wg *sync.WaitGroup, progress *int64, totalSize int64) {
+func downloadPart(ctx context.Context,taskId string,url string, fileName string, part Part, wg *sync.WaitGroup, progress *int64, totalSize int64) {
 	defer wg.Done()
 
-	//Used NewRequest instead of Get() to add custom headers
-	req, err := http.NewRequest("GET", url, nil)
+	tmpFileName:=fmt.Sprintf("part_%d.tmp",part.Index)
+	var currStart=part.Start
+
+	file,err:=os.OpenFile(tmpFileName,os.O_APPEND|os.O_CREATE|os.O_WRONLY,0644)
+	if err!=nil{
+		fmt.Println("Error opening temp file:",err)
+		return
+	}
+	defer file.Close()
+
+	stat,err:=file.Stat()
+	if err!=nil{
+		fileSize:=stat.Size()
+		currStart+=fileSize
+	}
+
+	if currStart>part.End{
+		fmt.Printf("Part %d already finished. Skipping...\n",part.Index)
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx,"GET", url, nil)
 	if err != nil {
 		log.Println("Error creating request: ", err)
 		return
 	}
 
 	//Used Sprintf to return formatted string
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", part.Start, part.End)
+	rangeHeader := fmt.Sprintf("bytes=%d-%d", currStart, part.End)
 	req.Header.Set("Range", rangeHeader)
 
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
+		if ctx.Err()!=nil{
+			return
+		}
 		log.Println("Error downloading part: ", err)
 		return
 	}
@@ -163,27 +189,16 @@ func downloadPart(url string, fileName string, part Part, wg *sync.WaitGroup, pr
 	//Used defer so that the res object is closed after its functioning
 	defer res.Body.Close()
 
-	//Check if server supports range requests
-	if res.StatusCode == 200 {
-		log.Printf("WARNING: Server returned 200 OK instead of 206 Partial Content. Range headers not supported for part %d", part.Index)
-	} else if res.StatusCode != 206 {
-		log.Printf("ERROR: Unexpected status code %d for part %d", res.StatusCode, part.Index)
-		return
-	}
-
-	tmpFile := fmt.Sprintf("part_%d.tmp", part.Index)
-	file, err := os.Create(tmpFile)
-	if err != nil {
-		log.Println("Error creating temp file: ", err)
-		return
-	}
-
-	defer file.Close()
-
 	//Create buffer
 	buf := make([]byte, 32*1024)
 
 	for {
+		select{
+		case<-ctx.Done():
+			return
+		default:
+
+		}
 		//Read data
 		n, err := res.Body.Read(buf)
 
@@ -191,8 +206,9 @@ func downloadPart(url string, fileName string, part Part, wg *sync.WaitGroup, pr
 			if err == io.EOF {
 				break
 			}
-			log.Println("Error reading: ", err)
-			return
+			if ctx.Err()!=nil{
+				return
+			}
 		}
 
 		//Write data to file upto 'n' bytes
@@ -202,11 +218,9 @@ func downloadPart(url string, fileName string, part Part, wg *sync.WaitGroup, pr
 			//Safely add 'n' bytes to shared counter
 			current := atomic.AddInt64(progress, int64(n))
 			percent := float64(current) / float64(totalSize) * 100
-
-			//Cap progress at 100% to handle servers that ignore Range headers
-			percent = math.Min(percent, 100.0)
-
-			SendProgress(fileName, percent)
+			if int(current)%10==0{
+				SendProgress(taskId,fileName, math.Min(percent,100.0))
+			}
 		}
 	}
 }

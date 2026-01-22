@@ -1,28 +1,56 @@
-<div class="manager-container" style="text-align: center; font-family: sans-serif; margin-top: 50px;">
+<div class="container">
   <h2>PullDown</h2>
-  
-  <!-- Input Section -->
-  <div class="input-group" style="margin-bottom: 20px;">
-    <input 
-      type="text" 
-      [(ngModel)]="url" 
-      placeholder="Paste link here..." 
-      style="padding: 10px; width: 300px; font-size: 16px;"
-    >
-    <button 
-      (click)="startDownload()" 
-      style="padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; cursor: pointer;">
-      Download
-    </button>
+
+  <!-- Input Area -->
+  <div class="add-download">
+    <input type="text" [(ngModel)]="urlInput" placeholder="Paste link (YouTube or File)...">
+    <button (click)="startDownload()">+ Add Download</button>
   </div>
 
-  <!-- Progress Section (Only shows if progress > 0) -->
-  <div *ngIf="progress > 0" class="progress-area" style="width: 400px; margin: 0 auto; text-align: left;">
-    <p>Downloading: <strong>{{ currentFile }}</strong></p>
+  <!-- The List -->
+  <div class="task-list">
+    <table>
+      <thead>
+        <tr>
+          <th>File</th>
+          <th>Progress</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let task of tasks">
+          <!-- File Name -->
+          <td class="file-col">
+            <div class="filename" title="{{task.fileName}}">{{ task.fileName }}</div>
+            <small>{{ task.id }}</small>
+          </td>
+
+          <!-- Progress Bar -->
+          <td class="progress-col">
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" [style.width.%]="task.progress"></div>
+            </div>
+            <span>{{ task.progress | number:'1.0-1' }}%</span>
+          </td>
+
+          <!-- Status Badge -->
+          <td>
+            <span [class]="'badge ' + task.status.toLowerCase()">{{ task.status }}</span>
+          </td>
+
+          <!-- Buttons -->
+          <td>
+            <button *ngIf="task.status === 'Downloading'" (click)="pauseTask(task)" class="btn-pause">⏸</button>
+            <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task)" class="btn-resume">▶</button>
+            <button *ngIf="task.status === 'Completed'" class="btn-folder">📂</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
     
-    <!-- The Progress Bar -->
-    <progress [value]="progress" max="100" style="width: 100%; height: 20px;"></progress>
-    
-    <p style="text-align: right;">{{ progress | number:'1.0-2' }}%</p>
+    <div *ngIf="tasks.length === 0" class="empty-state">
+      No downloads yet. Paste a link above!
+    </div>
   </div>
 </div>
