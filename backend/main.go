@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 
@@ -29,6 +32,9 @@ var(
 	//Store running downloads
 	downloadManager=make(map[string]context.CancelFunc)
 	managerMutex sync.Mutex
+
+	Tasks []Task
+	dataMutex sync.Mutex
 )
 
 //Upgrade http request to websocket
@@ -61,6 +67,8 @@ func main() {
 	r.POST("/pause",pauseDownloadHandler)
 	r.POST("/resume",resumeDownloadHandler)
 
+	loadTasks()
+	
 	//Run Server
 	r.Run()
 }
@@ -78,6 +86,15 @@ func wsHandler(c *gin.Context){
 	conMutex.Lock()
 	activeCon=con
 	conMutex.Unlock()
+
+	//Send tasks immediately upon connection
+	dataMutex.Lock()
+	initialMsg:=gin.H{
+		"event":"initial_state",
+		"tasks":Tasks,
+	}
+	dataMutex.Unlock()
+	activeCon.WriteJSON(initialMsg)
 
 	log.Println("Client connected via WebSocket!")
 
@@ -128,11 +145,39 @@ func startDownloadHandler(c *gin.Context){
 		return
 	}
 
+	dataMutex.Lock()
+	var taskFound bool=false
+
+	for i:=range Tasks{
+		if Tasks[i].ID==req.Url{
+			Tasks[i].Status="Downloading"
+			taskFound=true
+			break
+		}
+	}
+
+	if !taskFound{
+		newTask:=Task{
+			ID: req.Url,
+			Url: req.Url,
+			FileName: "Pending...",
+			Status: "Downloading",
+			TotalSize: 0,
+			Downloaded: 0,
+		}
+		Tasks=append(Tasks, newTask)
+	}
+
+	dataMutex.Unlock()
+	saveTasks()
+
 	ctx,cancel:=context.WithCancel(context.Background())
 	managerMutex.Lock()
 	downloadManager[req.Url]=cancel
 	managerMutex.Unlock()
+
 	
+
 	if strings.Contains(req.Url,"youtube") || strings.Contains(req.Url,"youtu.be"){
 		go downloadYoutube(ctx,req.Url)
 	}else{
@@ -152,19 +197,67 @@ func pauseDownloadHandler(c *gin.Context){
 		c.JSON(http.StatusBadRequest,gin.H{"error":err.Error()})
 		return
 	}
+
 	managerMutex.Lock()
 	cancel,exists:=downloadManager[req.Url]
 	if exists{
 		cancel()
 		delete(downloadManager,req.Url)
-		managerMutex.Unlock()
+	}
+	managerMutex.Unlock()
+
+	dataMutex.Lock()
+	for i:=range Tasks{
+		if Tasks[i].ID==req.Url{
+			Tasks[i].Status="Paused"
+			break
+		}
+	}
+	dataMutex.Unlock()
+	if exists{
 		c.JSON(http.StatusOK,gin.H{"message":"Download Paused"})
 	}else{
-		managerMutex.Unlock()
-		c.JSON(http.StatusNotFound,gin.H{"message":"Downlod not found or already stopped"})
+		c.JSON(http.StatusNotFound,gin.H{"message":"Downlod not running"})
 	}
 }
 
 func resumeDownloadHandler(c *gin.Context){
 	startDownloadHandler(c)
+}
+
+//Saves memory list to a file
+func saveTasks(){
+	dataMutex.Lock()
+	defer dataMutex.Unlock()
+
+	bytes,err:=json.MarshalIndent(Tasks,""," ")
+	if err!=nil{
+		fmt.Println("Error marshalling:",err)
+		return
+	}
+
+	writeErr:=os.WriteFile("tasks.json",bytes,0644)
+	if writeErr!=nil{
+		fmt.Println(writeErr)
+		return
+	}
+}
+
+func loadTasks(){
+	dataMutex.Lock()
+	defer dataMutex.Unlock()
+
+	bytes,err:=os.ReadFile("tasks.json")
+	if err!=nil{
+		fmt.Println("Error reading json file:",err)
+		return
+	}
+
+	json.Unmarshal(bytes,&Tasks)
+
+	for i:=range Tasks{
+		if Tasks[i].Status=="Downloading"{
+			Tasks[i].Status="Paused"
+		}
+	}
 }

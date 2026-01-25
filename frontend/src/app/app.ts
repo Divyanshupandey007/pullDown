@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, signal } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { DownloadManager } from './components/download-manager/download-manager';
 import { Websocket } from './services/websocket';
@@ -10,7 +10,7 @@ import { Websocket } from './services/websocket';
   templateUrl: './app.html',
   styleUrl: './app.css'
 })
-export class App {
+export class App implements OnInit{
   protected readonly title = signal('PullDown');
 
   constructor(private wsService: Websocket){}
