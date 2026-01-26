@@ -1,56 +1,86 @@
-<div class="container">
-  <h2>PullDown</h2>
+<div class="app-container">
+  
+  <app-sidebar 
+    [tasks]="tasks"
+    [activeFilter]="currentFilter"
+    [storageUsed]="totalDownloadedBytes"
+    (filterChange)="setFilter($event)">
+  </app-sidebar>
 
-  <!-- Input Area -->
-  <div class="add-download">
-    <input type="text" [(ngModel)]="urlInput" placeholder="Paste link (YouTube or File)...">
-    <button (click)="startDownload()">+ Add Download</button>
-  </div>
-
-  <!-- The List -->
-  <div class="task-list">
-    <table>
-      <thead>
-        <tr>
-          <th>File</th>
-          <th>Progress</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let task of tasks">
-          <!-- File Name -->
-          <td class="file-col">
-            <div class="filename" title="{{task.fileName}}">{{ task.fileName }}</div>
-            <small>{{ task.id }}</small>
-          </td>
-
-          <!-- Progress Bar -->
-          <td class="progress-col">
-            <div class="progress-bar-bg">
-              <div class="progress-bar-fill" [style.width.%]="task.progress"></div>
-            </div>
-            <span>{{ task.progress | number:'1.0-1' }}%</span>
-          </td>
-
-          <!-- Status Badge -->
-          <td>
-            <span [class]="'badge ' + task.status.toLowerCase()">{{ task.status }}</span>
-          </td>
-
-          <!-- Buttons -->
-          <td>
-            <button *ngIf="task.status === 'Downloading'" (click)="pauseTask(task)" class="btn-pause">⏸</button>
-            <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task)" class="btn-resume">▶</button>
-            <button *ngIf="task.status === 'Completed'" class="btn-folder">📂</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <main class="main-content">
     
-    <div *ngIf="tasks.length === 0" class="empty-state">
-      No downloads yet. Paste a link above!
+    <!-- TOPBAR -->
+    <app-topbar 
+      (addUrl)="openAddModal()"
+      (search)="onSearch($event)"
+      (resumeAll)="resumeAll()"
+      (pauseAll)="pauseAll()"
+      (stopAll)="stopAll()">
+    </app-topbar>
+
+    <div class="download-list-header">
+      <span>{{ filteredTasks.length }} downloads</span>
+    </div>
+
+    <div class="downloads-container">
+      <div *ngFor="let task of filteredTasks" 
+           class="download-card" 
+           [class.selected]="selectedTask === task"
+           (click)="selectTask(task)">
+        
+        <div class="file-icon-box">
+          <i [class]="'ph ' + getFileIcon(task.fileName)" [style.color]="getIconColor(task.fileName)"></i>
+        </div>
+
+        <div class="file-info">
+          <div class="file-header">
+            <span class="filename">{{ task.fileName }}</span>
+          </div>
+          <div class="file-meta">
+            <span class="status-dot" [class]="task.status.toLowerCase()"></span>
+            <span class="status-text">{{ task.status }}</span>
+            <span class="separator">•</span>
+            <span>{{ formatBytes(task.downloaded) }} / {{ formatBytes(task.totalSize) }}</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" [style.width.%]="task.progress" [class]="task.status.toLowerCase()"></div>
+          </div>
+          <div class="file-footer">
+            <span class="percent">{{ task.progress | number:'1.0-1' }}%</span>
+            <div class="action-buttons">
+              <button *ngIf="task.status === 'Downloading'" (click)="pauseTask(task)" class="icon-btn pause"><i class="ph ph-pause"></i></button>
+              <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task)" class="icon-btn resume"><i class="ph ph-play"></i></button>
+              <button *ngIf="task.status === 'Completed'" class="icon-btn folder"><i class="ph ph-folder"></i></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="filteredTasks.length === 0" class="empty-state">
+        <i class="ph ph-cloud-slash"></i>
+        <p>No downloads found.</p>
+      </div>
+    </div>
+  </main>
+
+  <app-stats 
+    [selectedTask]="selectedTask"
+    [totalBytes]="totalDownloadedBytes"
+    [activeCount]="activeDownloadCount"
+    [completedCount]="completedCount"
+    [errorCount]="errorCount">
+  </app-stats>
+
+  <!-- ADD URL MODAL -->
+  <div class="modal-overlay" *ngIf="isModalOpen" (click)="closeAddModal()">
+    <div class="modal-card" (click)="$event.stopPropagation()">
+      <h3>Add New Download</h3>
+      <input type="text" [(ngModel)]="urlInput" placeholder="Paste your link here..." autofocus>
+      <div class="modal-actions">
+        <button class="btn-cancel" (click)="closeAddModal()">Cancel</button>
+        <button class="btn-primary" (click)="startDownload()">Start Download</button>
+      </div>
     </div>
   </div>
+
 </div>

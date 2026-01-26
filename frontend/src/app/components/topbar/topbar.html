@@ -1,0 +1,48 @@
+<header class="top-bar">
+  
+  <!-- Add URL Button -->
+  <button class="btn-add" (click)="addUrl.emit()">
+    <i class="ph ph-plus"></i> Add URL
+  </button>
+
+  <!-- Search Box -->
+  <div class="search-box">
+    <i class="ph ph-magnifying-glass"></i>
+    <input type="text" 
+           [(ngModel)]="searchText" 
+           (ngModelChange)="onSearchChange()" 
+           placeholder="Search downloads...">
+  </div>
+
+  <!-- Control Group -->
+  <div class="control-group">
+    <!-- Resume All -->
+    <button class="icon-btn" title="Resume All" (click)="resumeAll.emit()">
+      <i class="ph ph-play"></i>
+    </button>
+
+    <!-- Pause All -->
+    <button class="icon-btn" title="Pause All" (click)="pauseAll.emit()">
+      <i class="ph ph-pause"></i>
+    </button>
+
+    <!-- Stop All (Hard Stop) -->
+    <button class="icon-btn danger" title="Stop All" (click)="stopAll.emit()">
+      <i class="ph ph-stop"></i>
+    </button>
+  </div>
+
+  <!-- Separator -->
+  <div class="separator"></div>
+
+  <!-- Tools -->
+  <div class="tool-group">
+    <button class="icon-btn" title="Notifications" (click)="openNotifications.emit()">
+      <i class="ph ph-bell"></i>
+    </button>
+    <button class="icon-btn" title="Settings" (click)="openSettings.emit()">
+      <i class="ph ph-gear"></i>
+    </button>
+  </div>
+
+</header>

@@ -1,0 +1,51 @@
+<aside class="sidebar-right">
+  <h3>Statistics</h3>
+
+  <!-- Selected Task Details -->
+  <div class="stats-card" *ngIf="selectedTask">
+    <div class="card-title-row">
+      <span>Selected File</span>
+      <span class="badge blue">Details</span>
+    </div>
+    <div class="detail-group">
+      <label>Name</label>
+      <div class="val">{{ selectedTask.fileName }}</div>
+    </div>
+    <div class="detail-group">
+      <label>URL</label>
+      <div class="val url-text" title="{{selectedTask.url}}">{{ selectedTask.url }}</div>
+    </div>
+    <div class="detail-group">
+      <label>Size</label>
+      <div class="val">{{ formatBytes(selectedTask.totalSize) }}</div>
+    </div>
+  </div>
+
+  <!-- Total Downloaded -->
+  <div class="stats-card">
+    <div class="card-title-row">
+      <i class="ph ph-hard-drives"></i>
+      <span>Total Data</span>
+    </div>
+    <div class="big-number">{{ formatBytes(totalBytes) }}</div>
+  </div>
+
+  <!-- Summary Squares -->
+  <div class="summary-grid">
+    <div class="stats-card square">
+      <i class="ph ph-download-simple" style="color: #3b82f6;"></i>
+      <div class="sq-val">{{ activeCount }}</div>
+      <div class="sq-label">Active</div>
+    </div>
+    <div class="stats-card square">
+      <i class="ph ph-check-circle" style="color: #22c55e;"></i>
+      <div class="sq-val">{{ completedCount }}</div>
+      <div class="sq-label">Done</div>
+    </div>
+    <div class="stats-card square">
+      <i class="ph ph-warning-circle" style="color: #ef4444;"></i>
+      <div class="sq-val">{{ errorCount }}</div>
+      <div class="sq-label">Errors</div>
+    </div>
+  </div>
+</aside>

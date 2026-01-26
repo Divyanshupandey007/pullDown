@@ -1,0 +1,49 @@
+<aside class="sidebar">
+  <div class="logo-area">
+    <div class="logo-icon"><i class="ph ph-download-simple"></i></div>
+    <div class="logo-text">
+      <h2>PullDown</h2>
+      <span>Download Manager</span>
+    </div>
+  </div>
+
+  <div class="nav-section">
+    <span class="nav-header">CATEGORIES</span>
+    <ul>
+      <li *ngFor="let cat of categories" 
+          [class.active]="activeFilter === cat.id"
+          (click)="selectFilter(cat.id)">
+        <i class="ph" [class]="cat.icon"></i> {{ cat.label }}
+        <span class="badge" [class.gray]="activeFilter !== cat.id">
+          {{ countType(cat.id) }}
+        </span>
+      </li>
+    </ul>
+  </div>
+
+  <div class="nav-section">
+    <span class="nav-header">STATUS</span>
+    <ul>
+      <li *ngFor="let stat of statuses"
+          [class.active]="activeFilter === stat.id"
+          (click)="selectFilter(stat.id)">
+        <i class="ph" [class]="stat.icon" [style.color]="stat.color"></i> {{ stat.id }}
+        <span class="badge gray">
+          {{ countStatus(stat.id) }}
+        </span>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Dynamic Storage Widget -->
+  <div class="storage-widget">
+    <div class="storage-header">
+      <span>Session Usage</span>
+      <span class="storage-val">{{ formatBytes(storageUsed) }}</span>
+    </div>
+    <div class="storage-bar">
+      <div class="storage-fill" [style.width.%]="(storageUsed / 53687091200) * 100"></div> 
+    </div>
+    <span class="storage-free">Data downloaded this session</span>
+  </div>
+</aside>

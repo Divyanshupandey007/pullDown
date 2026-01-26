@@ -1,0 +1,79 @@
+:host { display: block; width: 100%; }
+
+.top-bar {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  margin-bottom: 20px;
+  width: 100%;
+}
+
+/* Add Button */
+.btn-add {
+  background: #3b82f6;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+  transition: 0.2s;
+}
+.btn-add:hover { background: #2563eb; }
+
+/* Search Box */
+.search-box {
+  flex: 1;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #a1a1aa;
+  transition: 0.2s;
+}
+.search-box:focus-within { border-color: #3b82f6; }
+.search-box input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #fff;
+  width: 100%;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* Icons */
+.icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #a1a1aa;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: 0.2s;
+  font-size: 18px;
+}
+.icon-btn:hover { background: #27272a; color: #fff; }
+.icon-btn.danger:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+/* Groups & Separator */
+.control-group, .tool-group { display: flex; gap: 5px; }
+
+.separator {
+  width: 1px;
+  height: 24px;
+  background: #27272a;
+  margin: 0 5px;
+}
