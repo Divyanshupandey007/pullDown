@@ -28,7 +28,7 @@ type Part struct {
 	End   int64
 }
 
-func processDownload(ctx context.Context,taskId string,downloadUrl string,customName ...string) {
+func (dm *DownloadManager) processDownload(ctx context.Context,taskId string,downloadUrl string,customName ...string) {
 	fmt.Println("Starting/Resuming download for: ", downloadUrl)
 
 	res, err := http.Head(downloadUrl)
@@ -38,15 +38,15 @@ func processDownload(ctx context.Context,taskId string,downloadUrl string,custom
 	}
 
 
-	dataMutex.Lock()
-	for i:=range Tasks{
-		if Tasks[i].ID==taskId{
-			Tasks[i].TotalSize=res.ContentLength
+	dm.dataMutex.Lock()
+	for i:=range dm.Tasks{
+		if dm.Tasks[i].ID==taskId{
+			dm.Tasks[i].TotalSize=res.ContentLength
 			break
 		}
 	}
-	dataMutex.Unlock()
-	saveTasks()
+	dm.dataMutex.Unlock()
+	dm.SaveTasks()
 
 	var fileName string
 	if len(customName)>0{
@@ -129,36 +129,36 @@ func processDownload(ctx context.Context,taskId string,downloadUrl string,custom
 		mergeParts(fileName, len(parts))
 		SendProgress(taskId,fileName,100.0)
 
-		dataMutex.Lock()
-		for i:=range Tasks{
-			if Tasks[i].ID==taskId{
-				Tasks[i].Status="Completed"
-				Tasks[i].FileName=fileName
-				Tasks[i].Downloaded=res.ContentLength
-				Tasks[i].TotalSize=res.ContentLength
+		dm.dataMutex.Lock()
+		for i:=range dm.Tasks{
+			if dm.Tasks[i].ID==taskId{
+				dm.Tasks[i].Status="Completed"
+				dm.Tasks[i].FileName=fileName
+				dm.Tasks[i].Downloaded=res.ContentLength
+				dm.Tasks[i].TotalSize=res.ContentLength
 				break
 			}
 		}
-		dataMutex.Unlock()
-		saveTasks()
+		dm.dataMutex.Unlock()
+		dm.SaveTasks()
 		fmt.Println("Download Complete")
 	}else{
 		currBytes:=atomic.LoadInt64(&downloadBytes)
-		dataMutex.Lock()
-		for i:=range Tasks{
-			if Tasks[i].ID==taskId{
-				Tasks[i].Status="Paused"
-				Tasks[i].Downloaded=currBytes
+		dm.dataMutex.Lock()
+		for i:=range dm.Tasks{
+			if dm.Tasks[i].ID==taskId{
+				dm.Tasks[i].Status="Paused"
+				dm.Tasks[i].Downloaded=currBytes
 				break
 			}
 		}
-		dataMutex.Unlock()
-		saveTasks()
+		dm.dataMutex.Unlock()
+		dm.SaveTasks()
 		fmt.Println("Download Paused")
 	}
 }
 
-func downloadYoutube(ctx context.Context,originalUrl string){
+func (dm *DownloadManager) downloadYoutube(ctx context.Context,originalUrl string){
 	fmt.Println("Analyzing youtube video:",originalUrl)
 
 	client:=youtube.Client{}
@@ -185,17 +185,17 @@ func downloadYoutube(ctx context.Context,originalUrl string){
 	fmt.Println("Got direct stream URL....")
 	safeTitle:=sanitizeFileName(video.Title)+".mp4"
 
-	dataMutex.Lock()
-	for i:=range Tasks{
-		if Tasks[i].ID==originalUrl{
-			Tasks[i].FileName=safeTitle
+	dm.dataMutex.Lock()
+	for i:=range dm.Tasks{
+		if dm.Tasks[i].ID==originalUrl{
+			dm.Tasks[i].FileName=safeTitle
 			break
 		}
 	}
-	dataMutex.Unlock()
-	saveTasks()
+	dm.dataMutex.Unlock()
+	dm.SaveTasks()
 
-	processDownload(ctx,originalUrl,streamURL,safeTitle)
+	dm.processDownload(ctx,originalUrl,streamURL,safeTitle)
 
 }
 
@@ -334,15 +334,15 @@ func mergeParts(fileName string, numParts int) {
 	fmt.Println("Files merged into:", fileName)
 }
 
-func updateTaskStatus(taskId string,status string,fileName string){
-	dataMutex.Lock()
-	defer dataMutex.Unlock()
+func (dm *DownloadManager) updateTaskStatus(taskId string,status string,fileName string){
+	dm.dataMutex.Lock()
+	defer dm.dataMutex.Unlock()
 
-	for i:=range Tasks{
-		if Tasks[i].ID==taskId{
-			Tasks[i].Status=status
+	for i:=range dm.Tasks{
+		if dm.Tasks[i].ID==taskId{
+			dm.Tasks[i].Status=status
 			if fileName!=""{
-				Tasks[i].FileName=fileName
+				dm.Tasks[i].FileName=fileName
 			}
 			break
 		}
