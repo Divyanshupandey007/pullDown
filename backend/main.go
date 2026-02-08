@@ -14,6 +14,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Config struct{
+	Port string
+	MaxConcurrent int
+	PartsPerFile int
+}
+
 //Map JSON data from frontend
 type DownloadRequest struct{
 	Url string `json:"url"`
@@ -30,6 +36,10 @@ type DownloadManager struct{
 
 	downloadManager map[string]context.CancelFunc
 	managerMutex sync.Mutex
+
+	semaphore chan struct{}
+
+	config Config
 }
 
 //Global Manager
@@ -75,13 +85,20 @@ func main() {
 	manager.LoadTasks()
 	
 	//Run Server
-	r.Run()
+	r.Run(manager.config.Port)
 }
 
 func NewDownloadManager() *DownloadManager{
+	cfg:=Config{
+		Port:":8080",
+		MaxConcurrent: 4,
+		PartsPerFile: 4,
+	}
 	return &DownloadManager{
 		Tasks:make([]Task, 0),
 		downloadManager:make(map[string]context.CancelFunc),
+		semaphore:make(chan struct{},cfg.MaxConcurrent),
+		config: cfg,
 	}
 }
 

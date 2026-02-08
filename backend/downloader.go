@@ -18,8 +18,8 @@ import (
 	"github.com/kkdai/youtube/v2"
 )
 
-//Calculate progress across restarts
-var globalTotalSize int64=0
+// Calculate progress across restarts
+var globalTotalSize int64 = 0
 
 // Part struct for handling chunks
 type Part struct {
@@ -28,7 +28,11 @@ type Part struct {
 	End   int64
 }
 
-func (dm *DownloadManager) processDownload(ctx context.Context,taskId string,downloadUrl string,customName ...string) {
+func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, downloadUrl string, customName ...string) {
+	dm.semaphore <- struct{}{}
+	defer func() {
+		<-dm.semaphore
+	}()
 	fmt.Println("Starting/Resuming download for: ", downloadUrl)
 
 	res, err := http.Head(downloadUrl)
@@ -37,11 +41,10 @@ func (dm *DownloadManager) processDownload(ctx context.Context,taskId string,dow
 		return
 	}
 
-
 	dm.dataMutex.Lock()
-	for i:=range dm.Tasks{
-		if dm.Tasks[i].ID==taskId{
-			dm.Tasks[i].TotalSize=res.ContentLength
+	for i := range dm.Tasks {
+		if dm.Tasks[i].ID == taskId {
+			dm.Tasks[i].TotalSize = res.ContentLength
 			break
 		}
 	}
@@ -49,106 +52,106 @@ func (dm *DownloadManager) processDownload(ctx context.Context,taskId string,dow
 	dm.SaveTasks()
 
 	var fileName string
-	if len(customName)>0{
-		fileName=customName[0]
-	}else{
-		if cd:=res.Header.Get("Content-Disposition");cd!=""{
-			_,params,err:=mime.ParseMediaType(cd)
-			if err==nil{
-				fileName=params["filename"]
+	if len(customName) > 0 {
+		fileName = customName[0]
+	} else {
+		if cd := res.Header.Get("Content-Disposition"); cd != "" {
+			_, params, err := mime.ParseMediaType(cd)
+			if err == nil {
+				fileName = params["filename"]
 			}
 		}
 
-		if fileName==""{
-			fileName=path.Base(downloadUrl)
+		if fileName == "" {
+			fileName = path.Base(downloadUrl)
 		}
 
-		if fileName=="" || !strings.Contains(fileName,"."){
-			fileName="download_file.bin"
+		if fileName == "" || !strings.Contains(fileName, ".") {
+			fileName = "download_file.bin"
 		}
 	}
 
-	parts := calculateParts(res.ContentLength, 4)
+	parts := calculateParts(res.ContentLength, dm.config.PartsPerFile)
 
-	var initialDownloaded int64=0
+	var initialDownloaded int64 = 0
 
-	for i:=range parts{
-		tmpFileName:=fmt.Sprintf("part_%d.tmp",i)
-		if stat,err:=os.Stat(tmpFileName);err==nil{
-			initialDownloaded+=stat.Size()
+	for i := range parts {
+		tmpFileName := fmt.Sprintf("part_%d.tmp", i)
+		if stat, err := os.Stat(tmpFileName); err == nil {
+			initialDownloaded += stat.Size()
 		}
 	}
 
 	//Create shared counter
-	var downloadBytes=initialDownloaded
+	var downloadBytes = initialDownloaded
 
-	if res.ContentLength>0{
-		percent:=float64(initialDownloaded)/float64(res.ContentLength)*100
-		SendProgress(taskId,fileName,percent)
+	if res.ContentLength > 0 {
+		percent := float64(initialDownloaded) / float64(res.ContentLength) * 100
+		SendProgress(taskId, fileName, percent)
 	}
 
 	//For implementing concurrency
 	var wg sync.WaitGroup
 
-	errChan:=make(chan error,len(parts))
+	errChan := make(chan error, len(parts))
 
 	for i := range parts {
 		//Increment the goroutine counter
 		wg.Add(1)
 
-		go func(p Part){
+		go func(p Part) {
 			defer wg.Done()
-			maxRetries:=5
-			for attempt:=0;attempt<maxRetries;attempt++{
-				if ctx.Err()!=nil{
+			maxRetries := 5
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				if ctx.Err() != nil {
 					return
 				}
-				err:=downloadPart(ctx,taskId,downloadUrl,fileName,p,&downloadBytes,res.ContentLength)
-				if err==nil{
+				err := downloadPart(ctx, taskId, downloadUrl, fileName, p, &downloadBytes, res.ContentLength)
+				if err == nil {
 					return
 				}
 
-				if ctx.Err()!=nil{
+				if ctx.Err() != nil {
 					return
 				}
-				fmt.Printf("Part %d failed (Attempt %d %d): %v. Retrying in 2 sec...",p.Index,attempt+1,maxRetries,err)
-				time.Sleep(2*time.Second)
+				fmt.Printf("Part %d failed (Attempt %d %d): %v. Retrying in 2 sec...", p.Index, attempt+1, maxRetries, err)
+				time.Sleep(2 * time.Second)
 			}
-			errChan<-fmt.Errorf("Part %d failed after %d attempts",p.Index,maxRetries)
-			}(parts[i])
-		}
-		wg.Wait()
-		close(errChan)
+			errChan <- fmt.Errorf("Part %d failed after %d attempts", p.Index, maxRetries)
+		}(parts[i])
+	}
+	wg.Wait()
+	close(errChan)
 
-		if len(errChan)>0{
-			fmt.Println("Download failed due to network error")
-			return
-		}
+	if len(errChan) > 0 {
+		fmt.Println("Download failed due to network error")
+		return
+	}
 
-	if ctx.Err()==nil{
+	if ctx.Err() == nil {
 		mergeParts(fileName, len(parts))
-		SendProgress(taskId,fileName,100.0)
+		SendProgress(taskId, fileName, 100.0)
 
 		dm.dataMutex.Lock()
-		for i:=range dm.Tasks{
-			if dm.Tasks[i].ID==taskId{
-				dm.Tasks[i].Status="Completed"
-				dm.Tasks[i].FileName=fileName
-				dm.Tasks[i].Downloaded=res.ContentLength
-				dm.Tasks[i].TotalSize=res.ContentLength
+		for i := range dm.Tasks {
+			if dm.Tasks[i].ID == taskId {
+				dm.Tasks[i].Status = "Completed"
+				dm.Tasks[i].FileName = fileName
+				dm.Tasks[i].Downloaded = res.ContentLength
+				dm.Tasks[i].TotalSize = res.ContentLength
 				break
 			}
 		}
 		dm.dataMutex.Unlock()
 		dm.SaveTasks()
 		fmt.Println("Download Complete")
-	}else{
-		currBytes:=atomic.LoadInt64(&downloadBytes)
+	} else {
+		currBytes := atomic.LoadInt64(&downloadBytes)
 		dm.dataMutex.Lock()
-		for i:=range dm.Tasks{
-			if dm.Tasks[i].ID==taskId{
-				dm.Tasks[i].Status="Paused"
-				dm.Tasks[i].Downloaded=currBytes
+		for i := range dm.Tasks {
+			if dm.Tasks[i].ID == taskId {
+				dm.Tasks[i].Status = "Paused"
+				dm.Tasks[i].Downloaded = currBytes
 				break
 			}
 		}
@@ -158,57 +161,66 @@ func (dm *DownloadManager) processDownload(ctx context.Context,taskId string,dow
 	}
 }
 
-func (dm *DownloadManager) downloadYoutube(ctx context.Context,originalUrl string){
-	fmt.Println("Analyzing youtube video:",originalUrl)
+func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl string) {
+	fmt.Println("Analyzing youtube video:", originalUrl)
 
-	client:=youtube.Client{}
-	video,err:=client.GetVideo(originalUrl)
-	if err!=nil{
-		fmt.Println("Error getting video info:",err)
+	client := youtube.Client{}
+	video, err := client.GetVideo(originalUrl)
+	if err != nil {
+		fmt.Println("Error getting video info:", err)
 		return
 	}
-	formats:=video.Formats.WithAudioChannels()
-	if len(formats)==0{
+	formats := video.Formats.WithAudioChannels()
+	if len(formats) == 0 {
 		fmt.Println("Error: No video with audio found")
 		return
 	}
-	format:=&formats[0]
-	fmt.Printf("Found format: %s, Quality: %s\n",format.MimeType,format.Quality)
+	format := &formats[0]
+	fmt.Printf("Found format: %s, Quality: %s\n", format.MimeType, format.Quality)
 
 	//Get direct URL
-	streamURL,err:=client.GetStreamURL(video,format)
-	if err!=nil{
-		fmt.Println("Error getting stream URL:",err)
+	streamURL, err := client.GetStreamURL(video, format)
+	if err != nil {
+		fmt.Println("Error getting stream URL:", err)
 		return
 	}
 
 	fmt.Println("Got direct stream URL....")
-	safeTitle:=sanitizeFileName(video.Title)+".mp4"
+	safeTitle := sanitizeFileName(video.Title) + ".mp4"
 
 	dm.dataMutex.Lock()
-	for i:=range dm.Tasks{
-		if dm.Tasks[i].ID==originalUrl{
-			dm.Tasks[i].FileName=safeTitle
+	for i := range dm.Tasks {
+		if dm.Tasks[i].ID == originalUrl {
+			dm.Tasks[i].FileName = safeTitle
 			break
 		}
 	}
 	dm.dataMutex.Unlock()
 	dm.SaveTasks()
 
-	dm.processDownload(ctx,originalUrl,streamURL,safeTitle)
+	dm.processDownload(ctx, originalUrl, streamURL, safeTitle)
 
 }
 
-func sanitizeFileName(name string) string{
-	invalidChars:=[]string{"/","\\",":","*","?","\"","<",">","|"}
-	for _,chars:=range invalidChars{
-		name=strings.ReplaceAll(name,chars,"_")
+func sanitizeFileName(name string) string {
+	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
+	for _, chars := range invalidChars {
+		name = strings.ReplaceAll(name, chars, "_")
 	}
 	return name
 }
 
 // Logic for calculating size of each part
 func calculateParts(totalSize int64, numParts int) []Part {
+	if totalSize <= 0 || totalSize < int64(numParts) {
+		return []Part{{
+			Index: 0,
+			Start: 0,
+			End:totalSize - 1,
+		},
+		}
+	}
+
 	var parts []Part
 	chunkSize := totalSize / int64(numParts)
 
@@ -225,30 +237,30 @@ func calculateParts(totalSize int64, numParts int) []Part {
 	return parts
 }
 
-func downloadPart(ctx context.Context,taskId string,url string, fileName string, part Part, progress *int64, totalSize int64) error {
+func downloadPart(ctx context.Context, taskId string, url string, fileName string, part Part, progress *int64, totalSize int64) error {
 	// defer wg.Done()
 
-	tmpFileName:=fmt.Sprintf("part_%d.tmp",part.Index)
-	var currStart=part.Start
+	tmpFileName := fmt.Sprintf("part_%d.tmp", part.Index)
+	var currStart = part.Start
 
-	file,err:=os.OpenFile(tmpFileName,os.O_APPEND|os.O_CREATE|os.O_WRONLY,0644)
-	if err!=nil{
-		return fmt.Errorf("File open error: %v",err)
+	file, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("File open error: %v", err)
 	}
 	defer file.Close()
 
-	stat,err:=file.Stat()
-	if err==nil{
-		currStart+=stat.Size()
+	stat, err := file.Stat()
+	if err == nil {
+		currStart += stat.Size()
 	}
 
-	expectedBytesRemaining:=(part.End-currStart)+1
+	expectedBytesRemaining := (part.End - currStart) + 1
 
-	if expectedBytesRemaining<=0{
+	if expectedBytesRemaining <= 0 {
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx,"GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
 	}
@@ -266,17 +278,17 @@ func downloadPart(ctx context.Context,taskId string,url string, fileName string,
 	//Used defer so that the res object is closed after its functioning
 	defer res.Body.Close()
 
-	if res.StatusCode!=200 && res.StatusCode!=206{
-		return fmt.Errorf("Bad status code: %d",res.StatusCode)
+	if res.StatusCode != 200 && res.StatusCode != 206 {
+		return fmt.Errorf("Bad status code: %d", res.StatusCode)
 	}
 
 	//Create buffer
 	buf := make([]byte, 32*1024)
-	var bytesDownloadedThisSession int64=0
+	var bytesDownloadedThisSession int64 = 0
 
 	for {
 		//Read data
-		if ctx.Err()!=nil{
+		if ctx.Err() != nil {
 			return nil
 		}
 		n, err := res.Body.Read(buf)
@@ -285,18 +297,18 @@ func downloadPart(ctx context.Context,taskId string,url string, fileName string,
 		if n > 0 {
 			file.Write(buf[:n])
 
-			bytesDownloadedThisSession+=int64(n)
+			bytesDownloadedThisSession += int64(n)
 			//Safely add 'n' bytes to shared counter
 			current := atomic.AddInt64(progress, int64(n))
 			percent := float64(current) / float64(totalSize) * 100
-			if int(current)%10==0{
-				SendProgress(taskId,fileName, math.Min(percent,100.0))
+			if int(current)%10 == 0 {
+				SendProgress(taskId, fileName, math.Min(percent, 100.0))
 			}
 		}
-		if err!=nil{
-			if err==io.EOF{
-				if bytesDownloadedThisSession<expectedBytesRemaining{
-					return fmt.Errorf("Server hung up early. Got %d bytes, expected %d",bytesDownloadedThisSession,expectedBytesRemaining)
+		if err != nil {
+			if err == io.EOF {
+				if bytesDownloadedThisSession < expectedBytesRemaining {
+					return fmt.Errorf("Server hung up early. Got %d bytes, expected %d", bytesDownloadedThisSession, expectedBytesRemaining)
 				}
 				break
 			}
@@ -334,15 +346,15 @@ func mergeParts(fileName string, numParts int) {
 	fmt.Println("Files merged into:", fileName)
 }
 
-func (dm *DownloadManager) updateTaskStatus(taskId string,status string,fileName string){
+func (dm *DownloadManager) updateTaskStatus(taskId string, status string, fileName string) {
 	dm.dataMutex.Lock()
 	defer dm.dataMutex.Unlock()
 
-	for i:=range dm.Tasks{
-		if dm.Tasks[i].ID==taskId{
-			dm.Tasks[i].Status=status
-			if fileName!=""{
-				dm.Tasks[i].FileName=fileName
+	for i := range dm.Tasks {
+		if dm.Tasks[i].ID == taskId {
+			dm.Tasks[i].Status = status
+			if fileName != "" {
+				dm.Tasks[i].FileName = fileName
 			}
 			break
 		}
