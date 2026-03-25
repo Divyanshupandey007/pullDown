@@ -1,86 +1,417 @@
-<div class="app-container">
-  
-  <app-sidebar 
-    [tasks]="tasks"
-    [activeFilter]="currentFilter"
-    [storageUsed]="totalDownloadedBytes"
-    (filterChange)="setFilter($event)">
+<div class="flex h-screen w-full overflow-hidden font-body select-none" style="background: var(--surface); color: var(--text-primary)">
+
+  <!-- New Download Modal -->
+  <div *ngIf="showModal" class="fixed inset-0 z-[100] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xl modal-backdrop-enter" (click)="closeModal()"></div>
+    <div class="glass-panel w-full max-w-lg p-8 rounded-2xl relative z-10 modal-enter">
+      <button class="absolute top-5 right-5 t-text-muted hover:text-primary transition-colors" (click)="closeModal()">
+        <span class="material-symbols-outlined text-xl">close</span>
+      </button>
+      <h3 class="text-2xl font-headline font-bold mb-6 text-primary">Engage New Link</h3>
+      <div class="t-card border rounded-xl p-10 flex flex-col items-center justify-center mb-6 hover:border-primary/50 transition-colors group cursor-pointer">
+        <span class="material-symbols-outlined text-4xl t-text-muted group-hover:text-primary mb-2 transition-colors">cloud_upload</span>
+        <p class="text-xs font-label t-text-sec uppercase tracking-widest">Drop URL or Torrent Packet</p>
+      </div>
+      <div class="space-y-5">
+        <div>
+          <label class="text-[10px] uppercase font-bold t-text-muted tracking-widest mb-2 block">Resource Identifier</label>
+          <input #urlInputField
+                 class="w-full t-input border rounded-xl px-5 py-3.5 text-sm focus:ring-1 focus:ring-primary focus:outline-none transition-theme"
+                 placeholder="https://vortex.io/stream/..."
+                 type="text"
+                 [(ngModel)]="urlInput"
+                 (keyup.enter)="startDownload()" />
+        </div>
+        <button (click)="startDownload()" class="w-full py-4 laser-progress rounded-xl text-zinc-950 font-headline font-black uppercase tracking-widest text-xs hover:brightness-110 active:scale-[0.98] transition-all">
+          Initialize Sequential Stream
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <app-sidebar
+    [activeTab]="activeTab"
+    (tabChange)="switchTab($event)"
+    (openAddModal)="openAddModal()">
   </app-sidebar>
 
-  <main class="main-content">
+  <!-- Main Content -->
+  <div class="flex-grow flex flex-col min-w-0 h-screen relative" style="background: var(--surface)">
     
-    <!-- TOPBAR -->
-    <app-topbar 
-      (addUrl)="openAddModal()"
+    <!-- Header -->
+    <app-topbar
       (search)="onSearch($event)"
       (resumeAll)="resumeAll()"
       (pauseAll)="pauseAll()"
       (stopAll)="stopAll()">
     </app-topbar>
 
-    <div class="download-list-header">
-      <span>{{ filteredTasks.length }} downloads</span>
-    </div>
+    <!-- Content Area -->
+    <main class="flex-grow p-10 overflow-y-auto custom-scrollbar">
 
-    <div class="downloads-container">
-      <div *ngFor="let task of filteredTasks" 
-           class="download-card" 
-           [class.selected]="selectedTask === task"
-           (click)="selectTask(task)">
-        
-        <div class="file-icon-box">
-          <i [class]="'ph ' + getFileIcon(task.fileName)" [style.color]="getIconColor(task.fileName)"></i>
+      <!-- Dashboard View -->
+      <div *ngIf="activeTab === 'dashboard'" class="fade-in-stagger">
+        <!-- Metric Cards -->
+        <section class="grid grid-cols-3 gap-6 mb-12">
+          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:border-primary/30">
+            <div class="flex justify-between items-start relative z-10">
+              <span class="material-symbols-outlined text-primary transition-theme text-2xl">hub</span>
+              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Total Data</span>
+            </div>
+            <div class="mt-6 relative z-10">
+              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ formatBytes(totalDownloadedBytes) }}</h3>
+            </div>
+          </div>
+
+          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between group hover:border-primary/30">
+            <div class="flex justify-between items-start">
+              <span class="material-symbols-outlined text-primary transition-theme text-2xl">offline_bolt</span>
+              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Active Streams</span>
+            </div>
+            <div class="mt-6">
+              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ activeDownloadCount }}</h3>
+              <p class="text-xs text-primary mt-3 font-bold transition-theme">{{ completedCount }} completed</p>
+            </div>
+          </div>
+
+          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between group hover:border-primary/30">
+            <div class="flex justify-between items-start">
+              <span class="material-symbols-outlined text-primary transition-theme text-2xl">layers</span>
+              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Total Tasks</span>
+            </div>
+            <div class="mt-6">
+              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ tasks.length > 9 ? tasks.length : '0' + tasks.length }}</h3>
+              <p class="text-xs t-text-muted mt-3 uppercase tracking-widest font-bold">Optimal Signal Lock</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Active Streams -->
+        <section>
+          <div class="flex items-end justify-between mb-7">
+            <div>
+              <h2 class="text-[1.6rem] font-headline font-bold t-text tracking-tight">Active Streams</h2>
+              <p class="text-[13px] t-text-muted mt-1">Real-time downlink prioritization</p>
+            </div>
+            <button class="bg-primary px-7 py-3 rounded-xl text-black font-headline font-black text-[11px] uppercase tracking-[0.15em] shadow-lg transition-theme hover:brightness-110 active:scale-95"
+                    (click)="openAddModal()">
+              Initialize Stream
+            </button>
+          </div>
+
+          <div class="space-y-3">
+            <!-- Empty State -->
+            <div *ngIf="filteredTasks.length === 0" class="glass-panel p-16 flex flex-col items-center justify-center rounded-2xl text-center">
+              <span class="material-symbols-outlined t-text-muted text-5xl mb-4">cloud_off</span>
+              <p class="italic t-text-muted text-sm">No active streams detected. Initialize a new downlink.</p>
+            </div>
+
+            <!-- Download Cards -->
+            <div *ngFor="let task of filteredTasks"
+                 class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+                 [ngClass]="{'active-card': selectedTask === task}"
+                 (click)="showDetailsPanel(task)">
+              
+              <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-primary transition-theme">
+                <span class="material-symbols-outlined text-2xl">{{ getFileIcon(task.fileName) }}</span>
+              </div>
+
+              <div class="flex-grow min-w-0">
+                <div class="flex justify-between items-start mb-1.5">
+                  <div class="flex items-center gap-3 min-w-0">
+                    <h4 class="font-headline font-bold t-text text-base truncate">{{ task.fileName }}</h4>
+                    <span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[9px] font-black uppercase tracking-widest border border-primary/20 transition-theme flex-shrink-0">{{ getFileTag(task.fileName) }}</span>
+                  </div>
+                  <div class="text-right flex-shrink-0 ml-4">
+                    <span class="text-[9px] font-bold t-text-muted uppercase tracking-widest block">Status</span>
+                    <span class="text-xs font-black transition-theme"
+                          [ngClass]="{'text-primary': task.status === 'Downloading', 'text-yellow-400': task.status === 'Paused', 'text-green-400': task.status === 'Completed', 'text-red-400': task.status === 'Error'}">
+                      {{ task.status === 'Completed' ? 'COMPLETED' : (task.status === 'Paused' ? 'PAUSED' : (task.progress?.toFixed(1) || '0') + '%') }}
+                    </span>
+                  </div>
+                </div>
+                <div class="relative w-full h-1 t-card rounded-full overflow-hidden" *ngIf="task.status !== 'Completed'">
+                  <div class="absolute top-0 left-0 h-full transition-all duration-700"
+                       [ngClass]="{'laser-progress': task.status === 'Downloading', 'bg-yellow-500': task.status === 'Paused', 'bg-zinc-600': task.status === 'Error'}"
+                       [style.width.%]="task.progress"></div>
+                </div>
+                <div *ngIf="task.status === 'Completed'" class="relative w-full h-1 bg-green-500/20 rounded-full overflow-hidden">
+                  <div class="absolute top-0 left-0 h-full w-full bg-green-500 rounded-full"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Active Streams Tab View -->
+      <div *ngIf="activeTab === 'active'" class="fade-in-stagger">
+        <h2 class="text-[1.6rem] font-headline font-bold t-text mb-7">Stream Telemetry</h2>
+        <div *ngIf="activeTasks.length === 0" class="glass-panel p-16 flex flex-col items-center justify-center rounded-2xl text-center">
+          <span class="material-symbols-outlined t-text-muted text-5xl mb-4">insights</span>
+          <p class="italic t-text-muted text-sm">Visualizing active node clusters in real-time...</p>
         </div>
-
-        <div class="file-info">
-          <div class="file-header">
-            <span class="filename">{{ task.fileName }}</span>
-          </div>
-          <div class="file-meta">
-            <span class="status-dot" [class]="task.status.toLowerCase()"></span>
-            <span class="status-text">{{ task.status }}</span>
-            <span class="separator">•</span>
-            <span>{{ formatBytes(task.downloaded) }} / {{ formatBytes(task.totalSize) }}</span>
-          </div>
-          <div class="progress-track">
-            <div class="progress-fill" [style.width.%]="task.progress" [class]="task.status.toLowerCase()"></div>
-          </div>
-          <div class="file-footer">
-            <span class="percent">{{ task.progress | number:'1.0-1' }}%</span>
-            <div class="action-buttons">
-              <button *ngIf="task.status === 'Downloading'" (click)="pauseTask(task)" class="icon-btn pause"><i class="ph ph-pause"></i></button>
-              <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task)" class="icon-btn resume"><i class="ph ph-play"></i></button>
-              <button *ngIf="task.status === 'Completed'" class="icon-btn folder"><i class="ph ph-folder"></i></button>
+        <div class="space-y-3">
+          <div *ngFor="let task of activeTasks"
+               class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+               (click)="showDetailsPanel(task)">
+            <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-primary transition-theme">
+              <span class="material-symbols-outlined text-2xl">{{ getFileIcon(task.fileName) }}</span>
+            </div>
+            <div class="flex-grow">
+              <div class="flex justify-between items-start mb-1.5">
+                <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
+                <span class="text-xs font-black text-primary transition-theme">{{ (task.progress?.toFixed(1) || '0') }}%</span>
+              </div>
+              <div class="relative w-full h-1 t-card rounded-full overflow-hidden">
+                <div class="absolute top-0 left-0 h-full laser-progress transition-all duration-700" [style.width.%]="task.progress"></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div *ngIf="filteredTasks.length === 0" class="empty-state">
-        <i class="ph ph-cloud-slash"></i>
-        <p>No downloads found.</p>
+      <!-- Archive Tab View -->
+      <div *ngIf="activeTab === 'completed'" class="fade-in-stagger">
+        <h2 class="text-[1.6rem] font-headline font-bold t-text mb-7">Historical Matrix</h2>
+        <div *ngIf="completedCount === 0" class="glass-panel p-16 flex flex-col items-center justify-center rounded-2xl text-center">
+          <span class="material-symbols-outlined t-text-muted text-5xl mb-4">lock_reset</span>
+          <p class="italic t-text-muted text-sm">Accessing encrypted local archives...</p>
+        </div>
+        <div class="space-y-3">
+          <div *ngFor="let task of tasks"
+               class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+               (click)="showDetailsPanel(task)">
+            <ng-container *ngIf="task.status === 'Completed'">
+              <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-green-400 transition-theme">
+                <span class="material-symbols-outlined text-2xl">{{ getFileIcon(task.fileName) }}</span>
+              </div>
+              <div class="flex-grow">
+                <div class="flex justify-between items-start mb-1.5">
+                  <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
+                  <span class="text-xs font-black text-green-400">COMPLETED</span>
+                </div>
+                <p class="text-xs t-text-muted">{{ formatBytes(task.totalSize) }}</p>
+              </div>
+            </ng-container>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings View -->
+      <div *ngIf="activeTab === 'settings'" class="fade-in-stagger">
+        <h2 class="text-[1.6rem] font-headline font-black mb-8 t-text">System Core Configuration</h2>
+        <div class="flex gap-8 min-h-[480px]">
+          <aside class="w-56 flex-shrink-0 space-y-1.5">
+            <button (click)="setSettingsTab('general')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'general' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">General</button>
+            <button (click)="setSettingsTab('connection')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'connection' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Connection</button>
+            <button (click)="setSettingsTab('proxy')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'proxy' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Proxy &amp; VPN</button>
+            <button (click)="setSettingsTab('automation')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'automation' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Automation</button>
+            <button (click)="setSettingsTab('notifications')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'notifications' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Notifications</button>
+          </aside>
+
+          <div class="flex-grow glass-panel rounded-2xl p-8 overflow-y-auto custom-scrollbar">
+            <!-- General -->
+            <div *ngIf="activeSettingsTab === 'general'" class="space-y-10">
+              <div class="grid grid-cols-2 gap-8">
+                <div>
+                  <label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Default Download Path</label>
+                  <div class="flex gap-2">
+                    <input class="flex-grow t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" [(ngModel)]="downloadPath" placeholder="C:\Downloads" />
+                    <button (click)="browseFolder()" class="p-3 t-card rounded-xl border hover:text-primary transition-all" title="Browse folder">
+                      <span class="material-symbols-outlined text-xl">folder_open</span>
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Simultaneous Downloads</label>
+                  <input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="4" />
+                </div>
+              </div>
+              <div class="t-border border-t pt-8">
+                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Behavior</h4>
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Auto-start Downloads</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Begin downloading immediately when added</p></div>
+                    <div (click)="toggleSetting('autoStart')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['autoStart'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['autoStart'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Show Completion Alerts</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Toast notification when a download finishes</p></div>
+                    <div (click)="toggleSetting('completionAlerts')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['completionAlerts'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['completionAlerts'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Connection -->
+            <div *ngIf="activeSettingsTab === 'connection'" class="space-y-10">
+              <div class="grid grid-cols-2 gap-8">
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Connections Per Server</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="16" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Connection Timeout (seconds)</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="30" /></div>
+              </div>
+              <div class="t-border border-t pt-8">
+                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Protocol Controls</h4>
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Dynamic Port Binding</p><p class="text-[10px] t-text-muted uppercase mt-0.5">UPnP / NAT-PMP Protocol Support</p></div>
+                    <div (click)="toggleSetting('portBinding')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [style.background]="toggles['portBinding'] ? '' : 'var(--surface-card)'" [ngClass]="toggles['portBinding'] ? 'bg-primary' : 'border border-white/10'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['portBinding'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0'" [style.background]="!toggles['portBinding'] ? 'var(--text-muted)' : ''"></div></div>
+                  </div>
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Full Packet Encryption</p><p class="text-[10px] t-text-muted uppercase mt-0.5">AES-256 peer-to-peer handshakes</p></div>
+                    <div (click)="toggleSetting('encryption')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['encryption'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['encryption'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Proxy & VPN -->
+            <div *ngIf="activeSettingsTab === 'proxy'" class="space-y-10">
+              <div class="grid grid-cols-2 gap-8">
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Host</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" placeholder="proxy.example.com" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Port</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" placeholder="8080" type="number" /></div>
+              </div>
+              <div class="t-border border-t pt-8">
+                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Proxy Settings</h4>
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Enable Proxy</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Route all downloads through a proxy server</p></div>
+                    <div (click)="toggleSetting('enableProxy')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['enableProxy'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['enableProxy'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Force HTTPS</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Reject non-encrypted connections</p></div>
+                    <div (click)="toggleSetting('forceHttps')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['forceHttps'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['forceHttps'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Automation -->
+            <div *ngIf="activeSettingsTab === 'automation'" class="space-y-10">
+              <div>
+                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Post-Download Actions</h4>
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Auto-extract Archives</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Unzip .zip and .rar files after download</p></div>
+                    <div (click)="toggleSetting('autoExtract')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['autoExtract'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['autoExtract'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                    <div><p class="text-sm font-bold t-text">Auto-retry on Failure</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Retry failed downloads up to 3 times</p></div>
+                    <div (click)="toggleSetting('autoRetry')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['autoRetry'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['autoRetry'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="t-border border-t pt-8">
+                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Scheduling</h4>
+                <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                  <div><p class="text-sm font-bold t-text">Bandwidth Scheduler</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Limit speed during working hours</p></div>
+                  <div (click)="toggleSetting('scheduler')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['scheduler'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['scheduler'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                </div>
+              </div>
+            </div>
+            <!-- Notifications -->
+            <div *ngIf="activeSettingsTab === 'notifications'" class="space-y-10">
+              <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Notification Preferences</h4>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                  <div><p class="text-sm font-bold t-text">Download Complete</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Alert when a stream finishes</p></div>
+                  <div (click)="toggleSetting('notifComplete')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['notifComplete'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['notifComplete'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                </div>
+                <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                  <div><p class="text-sm font-bold t-text">Error Notifications</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Alert on download failures</p></div>
+                  <div (click)="toggleSetting('notifError')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['notifError'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['notifError'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                </div>
+                <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
+                  <div><p class="text-sm font-bold t-text">Sound Effects</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Play sound on completion and errors</p></div>
+                  <div (click)="toggleSetting('soundEffects')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['soundEffects'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['soundEffects'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Details Panel (Slide-out Right) -->
+  <aside class="details-panel fixed top-0 right-0 h-screen w-[360px] backdrop-blur-3xl z-[70] flex flex-col p-9 shadow-[-30px_0_50px_-15px_rgba(0,0,0,0.5)]"
+         [style.background]="'var(--sidebar-bg)'"
+         [style.borderLeft]="'1px solid var(--border-subtle)'"
+         [ngClass]="showDetails ? 'translate-x-0' : 'translate-x-full'">
+    <div class="flex justify-between items-center mb-9">
+      <h3 class="font-headline font-black text-[11px] uppercase tracking-[0.2em] text-primary transition-theme">Stream Insights</h3>
+      <button class="w-9 h-9 flex items-center justify-center rounded-xl transition-colors" (click)="hideDetailsPanel()">
+        <span class="material-symbols-outlined t-text-muted text-xl">close</span>
+      </button>
+    </div>
+
+    <div class="space-y-8 flex-grow overflow-y-auto custom-scrollbar pr-2" *ngIf="selectedTask">
+      <div>
+        <h4 class="text-2xl font-black mb-3 break-words t-text leading-tight">{{ detailTitle }}</h4>
+        <div class="flex items-baseline gap-2">
+          <span class="text-primary font-headline font-black text-[2.75rem] transition-theme">{{ detailProgress.toFixed(0) }}%</span>
+          <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">In Transit</span>
+        </div>
+        <div class="w-full h-1.5 t-card mt-6 rounded-full overflow-hidden">
+          <div class="h-full laser-progress transition-all duration-700" [style.width.%]="detailProgress"></div>
+        </div>
+      </div>
+
+      <!-- Connection Chunks -->
+      <div>
+        <p class="text-[9px] t-text-muted uppercase font-black mb-4 tracking-[0.15em]">Connection Chunks</p>
+        <div class="grid grid-cols-10 gap-1 h-3.5">
+          <div class="active-thread rounded-sm transition-theme"></div>
+          <div class="t-card rounded-sm"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.2s"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.5s"></div>
+          <div class="t-card rounded-sm"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.1s"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.8s"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.3s"></div>
+          <div class="t-card rounded-sm"></div>
+          <div class="active-thread rounded-sm transition-theme" style="animation-delay: 0.6s"></div>
+        </div>
+      </div>
+
+      <!-- Peer Stats -->
+      <div class="grid grid-cols-2 gap-4">
+        <div class="t-card p-5 rounded-2xl border">
+          <p class="text-[9px] t-text-muted uppercase font-black mb-1.5">File Size</p>
+          <p class="text-xl font-headline font-black t-text">{{ formatBytes(selectedTask.totalSize) }}</p>
+        </div>
+        <div class="t-card p-5 rounded-2xl border">
+          <p class="text-[9px] t-text-muted uppercase font-black mb-1.5">Downloaded</p>
+          <p class="text-xl font-headline font-black t-text">{{ formatBytes(selectedTask.downloaded) }}</p>
+        </div>
+      </div>
+
+      <!-- URL -->
+      <div class="t-card p-5 rounded-2xl border">
+        <p class="text-[9px] t-text-muted uppercase font-black mb-2">Downlink Origin</p>
+        <code class="text-[11px] text-primary/70 block break-all leading-relaxed transition-theme">{{ selectedTask.url }}</code>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="flex gap-3">
+        <button *ngIf="selectedTask.status === 'Downloading'"
+                (click)="pauseTask(selectedTask)"
+                class="flex-1 py-3 border border-yellow-500/20 text-yellow-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-yellow-500/10 transition-all rounded-xl">
+          Pause Stream
+        </button>
+        <button *ngIf="selectedTask.status === 'Paused'"
+                (click)="resumeTask(selectedTask)"
+                class="flex-1 py-3 border border-green-500/20 text-green-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-green-500/10 transition-all rounded-xl">
+          Resume Stream
+        </button>
       </div>
     </div>
-  </main>
+  </aside>
 
-  <app-stats 
-    [selectedTask]="selectedTask"
-    [totalBytes]="totalDownloadedBytes"
-    [activeCount]="activeDownloadCount"
-    [completedCount]="completedCount"
-    [errorCount]="errorCount">
-  </app-stats>
-
-  <!-- ADD URL MODAL -->
-  <div class="modal-overlay" *ngIf="isModalOpen" (click)="closeAddModal()">
-    <div class="modal-card" (click)="$event.stopPropagation()">
-      <h3>Add New Download</h3>
-      <input type="text" [(ngModel)]="urlInput" placeholder="Paste your link here..." autofocus>
-      <div class="modal-actions">
-        <button class="btn-cancel" (click)="closeAddModal()">Cancel</button>
-        <button class="btn-primary" (click)="startDownload()">Start Download</button>
-      </div>
-    </div>
+  <!-- FAB -->
+  <div class="fixed bottom-10 right-10 z-[65]">
+    <button class="w-16 h-16 rounded-2xl bg-primary text-black shadow-[0_16px_32px_-8px_rgba(0,0,0,0.5)] border border-white/20 flex items-center justify-center transition-all hover:scale-110 active:scale-90 hover:rotate-90 group transition-theme"
+            (click)="openAddModal()">
+      <span class="material-symbols-outlined text-3xl font-bold">add</span>
+    </button>
   </div>
 
 </div>

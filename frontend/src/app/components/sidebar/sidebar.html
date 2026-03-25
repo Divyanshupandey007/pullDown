@@ -1,49 +1,24 @@
-<aside class="sidebar">
-  <div class="logo-area">
-    <div class="logo-icon"><i class="ph ph-download-simple"></i></div>
-    <div class="logo-text">
-      <h2>PullDown</h2>
-      <span>Download Manager</span>
+<aside
+  class="h-screen flex-shrink-0 flex flex-col backdrop-blur-3xl py-8 z-[60] transition-all duration-500"
+  [style.background]="'var(--sidebar-bg)'"
+  [style.borderRight]="'1px solid var(--border-subtle)'"
+  [ngClass]="isCollapsed ? 'w-20' : 'w-60'">
+  <div class="px-7 mb-10 flex items-center" [ngClass]="isCollapsed ? 'justify-center' : 'justify-between'">
+    <div *ngIf="!isCollapsed" class="transition-all duration-300">
+      <h1 class="text-xl font-black italic tracking-tighter" style="color: var(--text-primary)">PullDown</h1>
     </div>
+    <button class="hover:text-primary transition-theme flex-shrink-0" style="color: var(--text-muted)" (click)="toggleSidebar()">
+      <span class="material-symbols-outlined text-xl">{{ isCollapsed ? 'menu' : 'menu_open' }}</span>
+    </button>
   </div>
 
-  <div class="nav-section">
-    <span class="nav-header">CATEGORIES</span>
-    <ul>
-      <li *ngFor="let cat of categories" 
-          [class.active]="activeFilter === cat.id"
-          (click)="selectFilter(cat.id)">
-        <i class="ph" [class]="cat.icon"></i> {{ cat.label }}
-        <span class="badge" [class.gray]="activeFilter !== cat.id">
-          {{ countType(cat.id) }}
-        </span>
-      </li>
-    </ul>
-  </div>
-
-  <div class="nav-section">
-    <span class="nav-header">STATUS</span>
-    <ul>
-      <li *ngFor="let stat of statuses"
-          [class.active]="activeFilter === stat.id"
-          (click)="selectFilter(stat.id)">
-        <i class="ph" [class]="stat.icon" [style.color]="stat.color"></i> {{ stat.id }}
-        <span class="badge gray">
-          {{ countStatus(stat.id) }}
-        </span>
-      </li>
-    </ul>
-  </div>
-
-  <!-- Dynamic Storage Widget -->
-  <div class="storage-widget">
-    <div class="storage-header">
-      <span>Session Usage</span>
-      <span class="storage-val">{{ formatBytes(storageUsed) }}</span>
-    </div>
-    <div class="storage-bar">
-      <div class="storage-fill" [style.width.%]="(storageUsed / 53687091200) * 100"></div> 
-    </div>
-    <span class="storage-free">Data downloaded this session</span>
-  </div>
+  <nav class="flex flex-col flex-grow space-y-0.5">
+    <button *ngFor="let tab of tabs" (click)="selectTab(tab.id)"
+      class="tab-btn flex items-center gap-4 px-7 py-3.5 transition-theme font-headline uppercase tracking-widest text-[11px]"
+      [ngClass]="activeTab === tab.id ? 'text-primary bg-primary/10 border-r-[3px] border-primary' : 'hover:bg-white/5'"
+      [style.color]="activeTab !== tab.id ? 'var(--text-muted)' : ''">
+      <span class="material-symbols-outlined text-xl">{{ tab.icon }}</span>
+      <span *ngIf="!isCollapsed">{{ tab.label }}</span>
+    </button>
+  </nav>
 </aside>
