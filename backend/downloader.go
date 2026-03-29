@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,9 +20,6 @@ import (
 
 	"github.com/kkdai/youtube/v2"
 )
-
-// Calculate progress across restarts
-var globalTotalSize int64 = 0
 
 // Part struct for handling chunks
 type Part struct {
@@ -76,7 +76,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 	var initialDownloaded int64 = 0
 
 	for i := range parts {
-		tmpFileName := fmt.Sprintf("part_%d.tmp", i)
+		tmpFileName := fmt.Sprintf("%s_part_%d.tmp", taskHash(taskId), i)
 		if stat, err := os.Stat(tmpFileName); err == nil {
 			initialDownloaded += stat.Size()
 		}
@@ -129,7 +129,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 	}
 
 	if ctx.Err() == nil {
-		mergeParts(fileName, len(parts))
+		mergeParts(fileName, len(parts), taskId, dm.config.DownloadDir)
 		SendProgress(taskId, fileName, 100.0)
 
 		dm.dataMutex.Lock()
@@ -159,6 +159,11 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		dm.SaveTasks()
 		fmt.Println("Download Paused")
 	}
+}
+
+func taskHash(taskId string) string {
+	h := md5.Sum([]byte(taskId))
+	return hex.EncodeToString(h[:])[:8]
 }
 
 func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl string) {
@@ -216,7 +221,7 @@ func calculateParts(totalSize int64, numParts int) []Part {
 		return []Part{{
 			Index: 0,
 			Start: 0,
-			End:totalSize - 1,
+			End:   totalSize - 1,
 		},
 		}
 	}
@@ -240,7 +245,7 @@ func calculateParts(totalSize int64, numParts int) []Part {
 func downloadPart(ctx context.Context, taskId string, url string, fileName string, part Part, progress *int64, totalSize int64) error {
 	// defer wg.Done()
 
-	tmpFileName := fmt.Sprintf("part_%d.tmp", part.Index)
+	tmpFileName := fmt.Sprintf("%s_part_%d.tmp", taskHash(taskId), part.Index)
 	var currStart = part.Start
 
 	file, err := os.OpenFile(tmpFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -318,9 +323,13 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 	return nil
 }
 
-func mergeParts(fileName string, numParts int) {
+func mergeParts(fileName string, numParts int, taskId string, downloadDir string) {
+
+	outputPath := filepath.Join(downloadDir, fileName)
+	os.MkdirAll(downloadDir, 0755)
+
 	//Create the final file
-	outFile, err := os.Create(fileName)
+	outFile, err := os.Create(outputPath)
 	if err != nil {
 		log.Println("Error creating final file: ", err)
 		return
@@ -328,7 +337,7 @@ func mergeParts(fileName string, numParts int) {
 	defer outFile.Close()
 
 	for i := 0; i < numParts; i++ {
-		partFileName := fmt.Sprintf("part_%d.tmp", i)
+		partFileName := fmt.Sprintf("%s_part_%d.tmp", taskHash(taskId), i)
 
 		//Reading the partial files
 		partFile, err := os.Open(partFileName)
