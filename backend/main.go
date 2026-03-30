@@ -150,7 +150,7 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 }
 
 // Bridge function
-func SendProgress(taskId string, fileName string, percent float64) {
+func SendProgress(taskId string, fileName string, percent float64, totalSize int64) {
 	conMutex.Lock()
 	defer conMutex.Unlock()
 
@@ -159,10 +159,11 @@ func SendProgress(taskId string, fileName string, percent float64) {
 	}
 
 	msg := gin.H{
-		"event":    "progress",
-		"id":       taskId,
-		"fileName": fileName,
-		"percent":  percent,
+		"event":     "progress",
+		"id":        taskId,
+		"fileName":  fileName,
+		"percent":   percent,
+		"totalSize": totalSize,
 	}
 
 	activeCon.WriteJSON(msg)
@@ -295,7 +296,10 @@ func (dm *DownloadManager) LoadTasks() {
 		return
 	}
 
-	json.Unmarshal(bytes, &dm.Tasks)
+	if err := json.Unmarshal(bytes, &dm.Tasks); err != nil {
+		fmt.Println("Error parsing tasks.json", err)
+		return
+	}
 
 	for i := range dm.Tasks {
 		if dm.Tasks[i].Status == "Downloading" {

@@ -8,16 +8,16 @@ import { TopbarComponent } from '../../components/topbar/topbar';
 
 @Component({
   selector: 'app-download-manager',
-  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent], 
+  imports: [CommonModule, FormsModule, SidebarComponent, TopbarComponent],
   templateUrl: './download-manager.html',
   styleUrl: './download-manager.css',
 })
 export class DownloadManager implements OnInit {
   urlInput: string = '';
-  
+
   tasks: Task[] = [];
   selectedTask: Task | null = null;
-  
+
   activeTab: string = 'dashboard';
   currentFilter: string = 'All';
   searchText: string = '';
@@ -57,7 +57,7 @@ export class DownloadManager implements OnInit {
     private http: HttpClient,
     private wsService: Websocket,
     private cdr: ChangeDetectorRef
-  ) {}
+  ) { }
 
   ngOnInit() {
     this.wsService.historyUpdates$.subscribe((loadedTasks: Task[]) => {
@@ -160,7 +160,7 @@ export class DownloadManager implements OnInit {
     this.showModal = !this.showModal;
   }
 
-  openAddModal() { 
+  openAddModal() {
     this.showModal = true;
     setTimeout(() => {
       if (this.urlInputField) {
@@ -215,8 +215,8 @@ export class DownloadManager implements OnInit {
 
     //Filter by search text
     if (this.searchText) {
-      result = result.filter(t => 
-        t.fileName.toLowerCase().includes(this.searchText) || 
+      result = result.filter(t =>
+        t.fileName.toLowerCase().includes(this.searchText) ||
         t.url.toLowerCase().includes(this.searchText)
       );
     }
@@ -233,8 +233,8 @@ export class DownloadManager implements OnInit {
     this.selectedTask = null;
   }
 
-  selectTask(task: Task) { 
-    this.selectedTask = task; 
+  selectTask(task: Task) {
+    this.selectedTask = task;
     this.detailTitle = task.fileName;
     this.detailProgress = task.progress || 0;
   }
@@ -243,7 +243,7 @@ export class DownloadManager implements OnInit {
     if (!this.urlInput) return;
     const url = this.urlInput;
     this.closeModal();
-    
+
     console.log('Starting Download:', url);
 
     const existing = this.tasks.find(t => t.id === url);
@@ -258,7 +258,7 @@ export class DownloadManager implements OnInit {
 
   // Individual Actions
   pauseTask(task: Task, event?: Event) {
-    if (event) event.stopPropagation(); 
+    if (event) event.stopPropagation();
     console.log('Pause triggered for:', task.fileName);
     task.status = 'Paused';
     this.http.post('http://localhost:8080/pause', { url: task.id }).subscribe({
@@ -293,7 +293,7 @@ export class DownloadManager implements OnInit {
   }
 
   stopAll() {
-    this.pauseAll(); 
+    this.pauseAll();
   }
 
   updateTask(msg: ProgressMessage) {
@@ -301,6 +301,7 @@ export class DownloadManager implements OnInit {
     if (task) {
       task.fileName = msg.fileName;
       task.progress = Math.min(msg.percent, 100);
+      if (msg.totalSize > 0) task.totalSize = msg.totalSize;
       if (task.totalSize > 0) task.downloaded = (task.progress / 100) * task.totalSize;
       if (msg.percent >= 100) {
         task.status = 'Completed';

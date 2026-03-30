@@ -87,7 +87,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if res.ContentLength > 0 {
 		percent := float64(initialDownloaded) / float64(res.ContentLength) * 100
-		SendProgress(taskId, fileName, percent)
+		SendProgress(taskId, fileName, percent, res.ContentLength)
 	}
 
 	//For implementing concurrency
@@ -130,7 +130,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if ctx.Err() == nil {
 		mergeParts(fileName, len(parts), taskId, dm.config.DownloadDir)
-		SendProgress(taskId, fileName, 100.0)
+		SendProgress(taskId, fileName, 100.0, res.ContentLength)
 
 		dm.dataMutex.Lock()
 		for i := range dm.Tasks {
@@ -176,15 +176,25 @@ func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl stri
 		return
 	}
 	formats := video.Formats.WithAudioChannels()
-	if len(formats) == 0 {
-		fmt.Println("Error: No video with audio found")
-		return
-	}
-	format := &formats[0]
-	fmt.Printf("Found format: %s, Quality: %s\n", format.MimeType, format.Quality)
 
+	var bestFormat *youtube.Format
+	for i := range formats {
+		if formats[i].QualityLabel != "" {
+			bestFormat = &formats[i]
+			break
+		}
+	}
+
+	if bestFormat == nil {
+		if len(formats) == 0 {
+			fmt.Println("Error: No formats found")
+			return
+		}
+		bestFormat = &formats[0]
+	}
+	fmt.Printf("Found format: %s, Quality: %s\n", bestFormat.MimeType, bestFormat.QualityLabel)
 	//Get direct URL
-	streamURL, err := client.GetStreamURL(video, format)
+	streamURL, err := client.GetStreamURL(video, bestFormat)
 	if err != nil {
 		fmt.Println("Error getting stream URL:", err)
 		return
@@ -290,6 +300,7 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 	//Create buffer
 	buf := make([]byte, 32*1024)
 	var bytesDownloadedThisSession int64 = 0
+	lastSent := time.Now()
 
 	for {
 		//Read data
@@ -306,8 +317,9 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 			//Safely add 'n' bytes to shared counter
 			current := atomic.AddInt64(progress, int64(n))
 			percent := float64(current) / float64(totalSize) * 100
-			if int(current)%10 == 0 {
-				SendProgress(taskId, fileName, math.Min(percent, 100.0))
+			if time.Since(lastSent) > 500*time.Millisecond {
+				SendProgress(taskId, fileName, math.Min(percent, 100.0), totalSize)
+				lastSent = time.Now()
 			}
 		}
 		if err != nil {
@@ -353,19 +365,4 @@ func mergeParts(fileName string, numParts int, taskId string, downloadDir string
 		os.Remove(partFileName)
 	}
 	fmt.Println("Files merged into:", fileName)
-}
-
-func (dm *DownloadManager) updateTaskStatus(taskId string, status string, fileName string) {
-	dm.dataMutex.Lock()
-	defer dm.dataMutex.Unlock()
-
-	for i := range dm.Tasks {
-		if dm.Tasks[i].ID == taskId {
-			dm.Tasks[i].Status = status
-			if fileName != "" {
-				dm.Tasks[i].FileName = fileName
-			}
-			break
-		}
-	}
 }
