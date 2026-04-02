@@ -51,6 +51,34 @@ export class DownloadManager implements OnInit {
 
   toggleSetting(key: string) {
     this.toggles[key] = !this.toggles[key];
+    this.saveSettings();
+  }
+
+  saveSettings() {
+    const payload = {
+      downloadPath: this.downloadPath,
+      maxDownloads: this.maxDownloads,
+      maxConnections: this.maxConnections,
+      connTimeout: this.connTimeout,
+      proxyHost: this.proxyHost,
+      proxyPort: this.proxyPort,
+      autoStart: this.toggles['autoStart'],
+      completionAlert: this.toggles['completionAlerts'],
+      portBinding: this.toggles['portBinding'],
+      encryption: this.toggles['encryption'],
+      enableProxy: this.toggles['enableProxy'],
+      forceHttps: this.toggles['forceHttps'],
+      autoExtract: this.toggles['autoExtract'],
+      autoRetry: this.toggles['autoRetry'],
+      scheduler: this.toggles['scheduler'],
+      notifComplete: this.toggles['notifComplete'],
+      notifError: this.toggles['notifError'],
+      soundEffects: this.toggles['soundEffects']
+    };
+    this.http.post('http://localhost:8080/settings', payload).subscribe({
+      next: () => console.log('Settings saved'),
+      error: (err) => console.error('Failed to save settings:', err)
+    });
   }
 
   constructor(
@@ -80,12 +108,45 @@ export class DownloadManager implements OnInit {
     this.wsService.progressUpdates$.subscribe((msg: ProgressMessage) => {
       this.updateTask(msg);
     });
+
+    // Load settings from backend
+    this.http.get<any>('http://localhost:8080/settings').subscribe({
+      next: (s) => {
+        this.downloadPath = s.downloadPath;
+        this.maxDownloads = s.maxDownloads;
+        this.maxConnections = s.maxConnections;
+        this.connTimeout = s.connTimeout;
+        this.proxyHost = s.proxyHost || '';
+        this.proxyPort = s.proxyPort || 8080;
+        this.toggles = {
+          autoStart: s.autoStart,
+          completionAlerts: s.completionAlert,
+          portBinding: s.portBinding,
+          encryption: s.encryption,
+          enableProxy: s.enableProxy,
+          forceHttps: s.forceHttps,
+          autoExtract: s.autoExtract,
+          autoRetry: s.autoRetry,
+          scheduler: s.scheduler,
+          notifComplete: s.notifComplete,
+          notifError: s.notifError,
+          soundEffects: s.soundEffects
+        };
+        this.cdr.detectChanges();
+      },
+      error: (err) => console.error('Failed to load settings:', err)
+    });
   }
 
   @ViewChild('urlInputField') urlInputField!: ElementRef<HTMLInputElement>;
   @ViewChild('folderInput') folderInput!: ElementRef<HTMLInputElement>;
 
   downloadPath: string = 'C:\\Downloads';
+  maxDownloads: number = 4;
+  maxConnections: number = 16;
+  connTimeout: number = 30;
+  proxyHost: string = '';
+  proxyPort: number = 8080;
 
   // Tab switching
   switchTab(tabId: string) {
@@ -105,6 +166,7 @@ export class DownloadManager implements OnInit {
         if (dirHandle) {
           this.downloadPath = dirHandle.name;
           this.cdr.detectChanges();
+          this.saveSettings();
           return;
         }
       } catch (e: any) {
@@ -121,6 +183,7 @@ export class DownloadManager implements OnInit {
         if (path) {
           this.downloadPath = path.split('/')[0];
           this.cdr.detectChanges();
+          this.saveSettings();
         }
       }
     };

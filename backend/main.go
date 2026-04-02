@@ -40,7 +40,8 @@ type DownloadManager struct {
 
 	semaphore chan struct{}
 
-	config Config
+	config   Config
+	settings Settings
 }
 
 // Global Manager
@@ -81,8 +82,11 @@ func main() {
 	r.POST("/download", manager.StartDownloadHandler)
 	r.POST("/pause", manager.PauseDownloadHandler)
 	r.POST("/resume", manager.ResumeDownloadHandler)
+	r.GET("/settings", manager.GetSettingsHandler)
+	r.POST("/settings", manager.UpdateSettingsHandler)
 
 	manager.LoadTasks()
+	manager.LoadSettings()
 
 	//Run Server
 	r.Run(manager.config.Port)
@@ -95,12 +99,26 @@ func NewDownloadManager() *DownloadManager {
 		PartsPerFile:  4,
 		DownloadDir:   ".",
 	}
-	return &DownloadManager{
+	dm := &DownloadManager{
 		Tasks:           make([]Task, 0),
 		downloadManager: make(map[string]context.CancelFunc),
 		semaphore:       make(chan struct{}, cfg.MaxConcurrent),
 		config:          cfg,
+		settings: Settings{
+			DownloadPath:    "C:\\Downloads",
+			MaxDownloads:    4,
+			MaxConnections:  16,
+			ConnTimeout:     30,
+			AutoStart:       true,
+			CompletionAlert: true,
+			PortBinding:     true,
+			ForceHttps:      true,
+			AutoRetry:       true,
+			NotifComplete:   true,
+			NotifError:      true,
+		},
 	}
+	return dm
 }
 
 func (dm *DownloadManager) wsHandler(c *gin.Context) {
@@ -268,6 +286,32 @@ func (dm *DownloadManager) ResumeDownloadHandler(c *gin.Context) {
 	dm.StartDownloadHandler(c)
 }
 
+func (dm *DownloadManager) GetSettingsHandler(c *gin.Context) {
+	dm.dataMutex.Lock()
+	defer dm.dataMutex.Unlock()
+	c.JSON(http.StatusOK, dm.settings)
+}
+
+func (dm *DownloadManager) UpdateSettingsHandler(c *gin.Context) {
+	var newSettings Settings
+	if err := c.ShouldBindJSON(&newSettings); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dm.dataMutex.Lock()
+	dm.settings = newSettings
+	dm.dataMutex.Unlock()
+
+	dm.SaveSettings()
+
+	dm.config.DownloadDir = newSettings.DownloadPath
+	dm.config.MaxConcurrent = newSettings.MaxDownloads
+	dm.config.PartsPerFile = newSettings.MaxConnections
+
+	c.JSON(http.StatusOK, gin.H{"message": "Settings saved"})
+}
+
 // Saves memory list to a file
 func (dm *DownloadManager) SaveTasks() {
 	dm.dataMutex.Lock()
@@ -305,5 +349,35 @@ func (dm *DownloadManager) LoadTasks() {
 		if dm.Tasks[i].Status == "Downloading" {
 			dm.Tasks[i].Status = "Paused"
 		}
+	}
+}
+
+func (dm *DownloadManager) SaveSettings() {
+	dm.dataMutex.Lock()
+	defer dm.dataMutex.Unlock()
+
+	bytes, err := json.MarshalIndent(dm.settings, "", " ")
+	if err != nil {
+		fmt.Println("Error marshalling settings:", err)
+		return
+	}
+
+	if err := os.WriteFile("settings.json", bytes, 0644); err != nil {
+		fmt.Println("Error saving settings:", err)
+	}
+}
+
+func (dm *DownloadManager) LoadSettings() {
+	dm.dataMutex.Lock()
+	defer dm.dataMutex.Unlock()
+
+	bytes, err := os.ReadFile("settings.json")
+	if err != nil {
+		fmt.Println("No settings file found, using defaults")
+		return
+	}
+
+	if err := json.Unmarshal(bytes, &dm.settings); err != nil {
+		fmt.Println("Error parsing settings.json:", err)
 	}
 }
