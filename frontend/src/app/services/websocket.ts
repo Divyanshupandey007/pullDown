@@ -10,29 +10,30 @@ export interface Task {
   totalSize: number;
   downloaded: number;
   // We will calculate 'progress' in the component
-  progress?: number; 
+  progress?: number;
 }
 
-export interface ProgressMessage{
+export interface ProgressMessage {
   event: string
   id: string
   fileName: string
   percent: number
+  totalSize: number
 }
 
 @Injectable({
   providedIn: 'root',
 })
 export class Websocket {
-   private socket: WebSocket | undefined;
-  
+  private socket: WebSocket | undefined;
+
   // Existing channel for live updates
   public progressUpdates$ = new Subject<ProgressMessage>();
-  
+
   // NEW: Channel for loading history
   public historyUpdates$ = new Subject<Task[]>();
 
-  constructor() {}
+  constructor() { }
 
   connect() {
     this.socket = new WebSocket('ws://localhost:8080/ws');
@@ -46,7 +47,7 @@ export class Websocket {
         // 1. Handle Live Progress
         if (data.event === 'progress') {
           this.progressUpdates$.next(data);
-        } 
+        }
         // 2. Handle Initial History (Load on Refresh)
         else if (data.event === 'initial_state') {
           // data.tasks comes from the Go backend

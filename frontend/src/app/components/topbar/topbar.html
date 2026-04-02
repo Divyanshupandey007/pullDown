@@ -1,48 +1,214 @@
-<header class="top-bar">
-  
-  <!-- Add URL Button -->
-  <button class="btn-add" (click)="addUrl.emit()">
-    <i class="ph ph-plus"></i> Add URL
-  </button>
+<header class="h-[72px] flex-shrink-0 flex items-center justify-between px-10" style="border-bottom: 1px solid var(--border-subtle)">
+  <div class="flex items-center gap-8">
+    <!-- Speed Stats -->
+    <div class="flex items-center gap-3">
+      <div class="p-2.5 t-card border rounded-xl transition-theme">
+        <span class="material-symbols-outlined text-primary text-xl">speed</span>
+      </div>
+      <div>
+        <p class="text-[9px] font-bold uppercase t-text-muted tracking-widest">Aggregate Downlink</p>
+        <p class="t-text font-headline font-black text-2xl leading-none">2.4 <span class="text-[11px] font-normal t-text-muted">GB/s</span></p>
+      </div>
+    </div>
 
-  <!-- Search Box -->
-  <div class="search-box">
-    <i class="ph ph-magnifying-glass"></i>
-    <input type="text" 
-           [(ngModel)]="searchText" 
-           (ngModelChange)="onSearchChange()" 
-           placeholder="Search downloads...">
+    <!-- Mode Selector -->
+    <div class="flex items-center t-card p-0.5 rounded-xl border">
+      <button 
+        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
+        [ngClass]="activeMode === 'snail' ? 'bg-primary text-black' : 't-text-muted'"
+        (click)="setTheme('snail')">
+        🐌 Snail
+      </button>
+      <button 
+        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
+        [ngClass]="activeMode === 'auto' ? 'bg-primary text-black' : 't-text-muted'"
+        (click)="setTheme('auto')">
+        ⚡ Auto
+      </button>
+      <button 
+        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
+        [ngClass]="activeMode === 'turbo' ? 'bg-primary text-black' : 't-text-muted'"
+        (click)="setTheme('turbo')">
+        🚀 Turbo
+      </button>
+    </div>
   </div>
 
-  <!-- Control Group -->
-  <div class="control-group">
-    <!-- Resume All -->
-    <button class="icon-btn" title="Resume All" (click)="resumeAll.emit()">
-      <i class="ph ph-play"></i>
-    </button>
+  <div class="flex items-center gap-5">
+    <!-- Search -->
+    <div class="relative">
+      <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-base t-text-muted">search</span>
+      <input class="t-input border rounded-xl pl-9 pr-4 py-2.5 text-xs w-52 focus:outline-none focus:border-primary/50 transition-all"
+             placeholder="Search downloads..."
+             [(ngModel)]="searchText"
+             (ngModelChange)="onSearchChange()" />
+    </div>
 
-    <!-- Pause All -->
-    <button class="icon-btn" title="Pause All" (click)="pauseAll.emit()">
-      <i class="ph ph-pause"></i>
-    </button>
+    <!-- Notification Bell -->
+    <div class="relative">
+      <button class="relative w-10 h-10 flex items-center justify-center rounded-xl t-card border transition-colors cursor-pointer"
+              (click)="toggleNotifications($event)">
+        <span class="material-symbols-outlined t-text-sec text-xl">notifications</span>
+        <span *ngIf="notifications.length > 0" class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full animate-ping transition-theme"></span>
+      </button>
 
-    <!-- Stop All (Hard Stop) -->
-    <button class="icon-btn danger" title="Stop All" (click)="stopAll.emit()">
-      <i class="ph ph-stop"></i>
-    </button>
+      <!-- Notification Popover -->
+      <div *ngIf="showNotifications" class="absolute top-13 right-0 w-72 glass-panel rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] z-50 overflow-hidden modal-enter">
+        <div class="p-4 flex justify-between items-center" style="border-bottom: 1px solid var(--border-subtle); background: var(--surface-card)">
+          <span class="text-[10px] font-bold uppercase tracking-widest t-text-sec">Signal Feed</span>
+          <button class="text-[10px] text-primary font-black uppercase hover:underline transition-theme" (click)="clearNotifications()">Clear All</button>
+        </div>
+        <div class="p-3 space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+          <div *ngFor="let notif of notifications" class="p-3.5 t-card rounded-lg border">
+            <p class="text-xs font-bold t-text mb-0.5">{{ notif.title }}</p>
+            <p class="text-[10px] t-text-muted">{{ notif.detail }}</p>
+          </div>
+          <div *ngIf="notifications.length === 0" class="py-10 flex flex-col items-center justify-center t-text-muted animate-pulse">
+            <span class="material-symbols-outlined text-3xl mb-2">task_alt</span>
+            <p class="text-[10px] font-black uppercase tracking-[0.2em]">All caught up!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account -->
+    <div class="relative">
+      <button class="w-10 h-10 rounded-xl border border-white/10 bg-zinc-800 flex items-center justify-center overflow-hidden hover:bg-white/10 transition-colors cursor-pointer"
+              (click)="toggleAccountMenu($event)">
+        <span class="material-symbols-outlined text-xl" style="color: var(--text-secondary)">person</span>
+      </button>
+
+      <!-- Account Dropdown -->
+      <div *ngIf="showAccountMenu" class="absolute top-13 right-0 w-56 glass-panel rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] z-50 overflow-hidden modal-enter">
+        <div class="p-4 border-b border-white/10 bg-white/5">
+          <p class="text-xs font-bold" style="color: var(--text-primary)">Guest User</p>
+          <p class="text-[9px] uppercase tracking-widest mt-0.5" style="color: var(--text-muted)">Local Session</p>
+        </div>
+        <div class="p-2">
+          <button (click)="openAppearance()" class="w-full text-left px-3.5 py-2.5 rounded-lg text-[11px] hover:bg-white/5 transition-all flex items-center gap-3" style="color: var(--text-secondary)">
+            <span class="material-symbols-outlined text-base">palette</span>
+            Appearance
+          </button>
+          <button (click)="openAbout()" class="w-full text-left px-3.5 py-2.5 rounded-lg text-[11px] hover:bg-white/5 transition-all flex items-center gap-3" style="color: var(--text-secondary)">
+            <span class="material-symbols-outlined text-base">help</span>
+            About PullDown
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
-
-  <!-- Separator -->
-  <div class="separator"></div>
-
-  <!-- Tools -->
-  <div class="tool-group">
-    <button class="icon-btn" title="Notifications" (click)="openNotifications.emit()">
-      <i class="ph ph-bell"></i>
-    </button>
-    <button class="icon-btn" title="Settings" (click)="openSettings.emit()">
-      <i class="ph ph-gear"></i>
-    </button>
-  </div>
-
 </header>
+
+<!-- Appearance Modal -->
+<div *ngIf="showAppearanceModal" class="fixed inset-0 z-[200] flex items-center justify-center modal-enter">
+  <div class="absolute inset-0 bg-black/70 backdrop-blur-xl modal-backdrop-enter" (click)="closeAppearance()"></div>
+  <div class="relative z-10 glass-panel rounded-3xl p-8 max-w-sm w-full mx-4 modal-enter">
+    <button (click)="closeAppearance()" class="absolute top-4 right-4 transition-colors" style="color: var(--text-muted)">
+      <span class="material-symbols-outlined text-xl">close</span>
+    </button>
+
+    <h2 class="text-lg font-headline font-black mb-1" style="color: var(--text-primary)">Appearance</h2>
+    <p class="text-[11px] mb-6" style="color: var(--text-muted)">Choose how PullDown looks to you</p>
+
+    <div class="space-y-2">
+      <!-- System -->
+      <button (click)="setAppTheme('system')"
+        class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all"
+        [ngClass]="activeTheme === 'system' ? 'bg-primary/10 border-primary/30' : 'border-white/5 hover:border-white/10'"
+        [style.background]="activeTheme !== 'system' ? 'var(--surface-card)' : ''">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+             [ngClass]="activeTheme === 'system' ? 'bg-primary/20' : 'bg-white/5'">
+          <span class="material-symbols-outlined text-xl" [ngClass]="activeTheme === 'system' ? 'text-primary' : ''" [style.color]="activeTheme !== 'system' ? 'var(--text-muted)' : ''">computer</span>
+        </div>
+        <div class="text-left flex-grow">
+          <p class="text-sm font-bold" [style.color]="activeTheme === 'system' ? '' : 'var(--text-primary)'" [ngClass]="activeTheme === 'system' ? 'text-primary' : ''">System</p>
+          <p class="text-[10px]" style="color: var(--text-muted)">Follow your OS theme</p>
+        </div>
+        <span *ngIf="activeTheme === 'system'" class="material-symbols-outlined text-primary text-xl">check_circle</span>
+      </button>
+
+      <!-- Dark -->
+      <button (click)="setAppTheme('dark')"
+        class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all"
+        [ngClass]="activeTheme === 'dark' ? 'bg-primary/10 border-primary/30' : 'border-white/5 hover:border-white/10'"
+        [style.background]="activeTheme !== 'dark' ? 'var(--surface-card)' : ''">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+             [ngClass]="activeTheme === 'dark' ? 'bg-primary/20' : 'bg-white/5'">
+          <span class="material-symbols-outlined text-xl" [ngClass]="activeTheme === 'dark' ? 'text-primary' : ''" [style.color]="activeTheme !== 'dark' ? 'var(--text-muted)' : ''">dark_mode</span>
+        </div>
+        <div class="text-left flex-grow">
+          <p class="text-sm font-bold" [style.color]="activeTheme === 'dark' ? '' : 'var(--text-primary)'" [ngClass]="activeTheme === 'dark' ? 'text-primary' : ''">Dark</p>
+          <p class="text-[10px]" style="color: var(--text-muted)">Always use dark theme</p>
+        </div>
+        <span *ngIf="activeTheme === 'dark'" class="material-symbols-outlined text-primary text-xl">check_circle</span>
+      </button>
+
+      <!-- Light -->
+      <button (click)="setAppTheme('light')"
+        class="w-full flex items-center gap-4 p-4 rounded-2xl border transition-all"
+        [ngClass]="activeTheme === 'light' ? 'bg-primary/10 border-primary/30' : 'border-white/5 hover:border-white/10'"
+        [style.background]="activeTheme !== 'light' ? 'var(--surface-card)' : ''">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center"
+             [ngClass]="activeTheme === 'light' ? 'bg-primary/20' : 'bg-white/5'">
+          <span class="material-symbols-outlined text-xl" [ngClass]="activeTheme === 'light' ? 'text-primary' : ''" [style.color]="activeTheme !== 'light' ? 'var(--text-muted)' : ''">light_mode</span>
+        </div>
+        <div class="text-left flex-grow">
+          <p class="text-sm font-bold" [style.color]="activeTheme === 'light' ? '' : 'var(--text-primary)'" [ngClass]="activeTheme === 'light' ? 'text-primary' : ''">Light</p>
+          <p class="text-[10px]" style="color: var(--text-muted)">Always use light theme</p>
+        </div>
+        <span *ngIf="activeTheme === 'light'" class="material-symbols-outlined text-primary text-xl">check_circle</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- About PullDown Modal -->
+<div *ngIf="showAboutModal" class="fixed inset-0 z-[200] flex items-center justify-center modal-enter">
+  <div class="absolute inset-0 bg-black/70 backdrop-blur-xl modal-backdrop-enter" (click)="closeAbout()"></div>
+  <div class="relative z-10 glass-panel rounded-3xl p-10 max-w-md w-full mx-4 text-center modal-enter">
+    <!-- Close -->
+    <button (click)="closeAbout()" class="absolute top-5 right-5 transition-colors" style="color: var(--text-muted)">
+      <span class="material-symbols-outlined text-xl">close</span>
+    </button>
+
+    <!-- Logo -->
+    <div class="w-16 h-16 mx-auto mb-6 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+      <span class="material-symbols-outlined text-primary text-3xl">download</span>
+    </div>
+
+    <!-- Title -->
+    <h2 class="text-2xl font-headline font-black italic tracking-tight" style="color: var(--text-primary)">PullDown</h2>
+    <p class="text-[10px] uppercase tracking-[0.25em] text-primary font-bold mt-1 mb-6">Download Manager</p>
+
+    <!-- Divider -->
+    <div class="w-12 h-px mx-auto mb-6" style="background: var(--border-subtle)"></div>
+
+    <!-- Info -->
+    <div class="space-y-4 text-left">
+      <div class="flex items-start gap-3 p-4 rounded-xl border" style="background: var(--surface-card); border-color: var(--border-subtle)">
+        <span class="material-symbols-outlined text-primary text-lg mt-0.5">code</span>
+        <div>
+          <p class="text-xs font-bold" style="color: var(--text-primary)">Built With</p>
+          <p class="text-[11px] mt-0.5" style="color: var(--text-secondary)">Go (Backend) · Angular (Frontend) · WebSocket</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 p-4 rounded-xl border" style="background: var(--surface-card); border-color: var(--border-subtle)">
+        <span class="material-symbols-outlined text-primary text-lg mt-0.5">lock_open</span>
+        <div>
+          <p class="text-xs font-bold" style="color: var(--text-primary)">Open Source</p>
+          <p class="text-[11px] mt-0.5" style="color: var(--text-secondary)">PullDown is free and open source. Licensed under MIT.</p>
+        </div>
+      </div>
+      <div class="flex items-start gap-3 p-4 rounded-xl border" style="background: var(--surface-card); border-color: var(--border-subtle)">
+        <span class="material-symbols-outlined text-primary text-lg mt-0.5">group</span>
+        <div>
+          <p class="text-xs font-bold" style="color: var(--text-primary)">Contribute</p>
+          <p class="text-[11px] mt-0.5" style="color: var(--text-secondary)">We welcome contributions! Report bugs, suggest features, or submit a pull request on GitHub.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Version -->
+    <p class="text-[9px] uppercase tracking-[0.2em] mt-8" style="color: var(--text-muted)">Version 1.0.0 · Made with ❤️</p>
+  </div>
+</div>
