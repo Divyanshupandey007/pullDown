@@ -218,7 +218,7 @@
                 <div>
                   <label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Default Download Path</label>
                   <div class="flex gap-2">
-                    <input class="flex-grow t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" [(ngModel)]="downloadPath" placeholder="C:\Downloads" />
+                    <input class="flex-grow t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" [(ngModel)]="downloadPath" (blur)="saveSettings()" placeholder="C:\Downloads" />
                     <button (click)="browseFolder()" class="p-3 t-card rounded-xl border hover:text-primary transition-all" title="Browse folder">
                       <span class="material-symbols-outlined text-xl">folder_open</span>
                     </button>
@@ -226,7 +226,7 @@
                 </div>
                 <div>
                   <label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Simultaneous Downloads</label>
-                  <input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="4" />
+                  <input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" [(ngModel)]="maxDownloads" (blur)="saveSettings()" />
                 </div>
               </div>
               <div class="t-border border-t pt-8">
@@ -246,8 +246,8 @@
             <!-- Connection -->
             <div *ngIf="activeSettingsTab === 'connection'" class="space-y-10">
               <div class="grid grid-cols-2 gap-8">
-                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Connections Per Server</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="16" /></div>
-                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Connection Timeout (seconds)</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" value="30" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Connections Per Server</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" [(ngModel)]="maxConnections" (blur)="saveSettings()" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Connection Timeout (seconds)</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" [(ngModel)]="connTimeout" (blur)="saveSettings()" /></div>
               </div>
               <div class="t-border border-t pt-8">
                 <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Protocol Controls</h4>
@@ -266,8 +266,8 @@
             <!-- Proxy & VPN -->
             <div *ngIf="activeSettingsTab === 'proxy'" class="space-y-10">
               <div class="grid grid-cols-2 gap-8">
-                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Host</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" placeholder="proxy.example.com" /></div>
-                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Port</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" placeholder="8080" type="number" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Host</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" [(ngModel)]="proxyHost" (blur)="saveSettings()" placeholder="proxy.example.com" /></div>
+                <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Proxy Port</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] focus:outline-none focus:border-primary/50" [(ngModel)]="proxyPort" (blur)="saveSettings()" placeholder="8080" type="number" /></div>
               </div>
               <div class="t-border border-t pt-8">
                 <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Proxy Settings</h4>
