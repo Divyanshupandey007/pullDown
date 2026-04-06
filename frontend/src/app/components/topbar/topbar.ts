@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, OnInit } from '@angular/core';
+import { Component, Output, EventEmitter, OnInit, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -9,6 +9,7 @@ import { FormsModule } from '@angular/forms';
   styleUrls: ['./topbar.css']
 })
 export class TopbarComponent implements OnInit {
+  @Input() aggregateSpeed: number = 0;
   @Output() search = new EventEmitter<string>();
   @Output() addUrl = new EventEmitter<void>();
   @Output() resumeAll = new EventEmitter<void>();
@@ -24,7 +25,7 @@ export class TopbarComponent implements OnInit {
   showAppearanceModal = false;
   activeTheme: string = 'dark';
 
-  notifications: { title: string; detail: string }[] = [];
+  @Input() notifications: { title: string; detail: string; time: Date }[] = [];
 
   ngOnInit() {
     const saved = localStorage.getItem('pulldown-theme') || 'dark';
@@ -91,5 +92,16 @@ export class TopbarComponent implements OnInit {
 
   closeAbout() {
     this.showAboutModal = false;
+  }
+
+  formatSpeed(bytesPerSec: number): { value: string; unit: string } {
+    if (!bytesPerSec || bytesPerSec <= 0) return { value: '0', unit: 'B/s' };
+    const k = 1024;
+    const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s'];
+    const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
+    return {
+      value: parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(1)).toString(),
+      unit: sizes[i]
+    };
   }
 }

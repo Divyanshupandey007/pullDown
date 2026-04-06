@@ -87,7 +87,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if res.ContentLength > 0 {
 		percent := float64(initialDownloaded) / float64(res.ContentLength) * 100
-		SendProgress(taskId, fileName, percent, res.ContentLength)
+		SendProgress(taskId, fileName, percent, res.ContentLength, 0)
 	}
 
 	//For implementing concurrency
@@ -130,7 +130,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if ctx.Err() == nil {
 		mergeParts(fileName, len(parts), taskId, dm.config.DownloadDir)
-		SendProgress(taskId, fileName, 100.0, res.ContentLength)
+		SendProgress(taskId, fileName, 100.0, res.ContentLength, 0)
 
 		dm.dataMutex.Lock()
 		for i := range dm.Tasks {
@@ -301,6 +301,7 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 	buf := make([]byte, 32*1024)
 	var bytesDownloadedThisSession int64 = 0
 	lastSent := time.Now()
+	lastBytes := int64(0)
 
 	for {
 		//Read data
@@ -318,8 +319,12 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 			current := atomic.AddInt64(progress, int64(n))
 			percent := float64(current) / float64(totalSize) * 100
 			if time.Since(lastSent) > 500*time.Millisecond {
-				SendProgress(taskId, fileName, math.Min(percent, 100.0), totalSize)
+				elapsed := time.Since(lastSent).Seconds()
+				currBytes := atomic.LoadInt64(progress)
+				speed := float64(currBytes-lastBytes) / elapsed
+				SendProgress(taskId, fileName, math.Min(percent, 100.0), totalSize, speed)
 				lastSent = time.Now()
+				lastBytes = currBytes
 			}
 		}
 		if err != nil {

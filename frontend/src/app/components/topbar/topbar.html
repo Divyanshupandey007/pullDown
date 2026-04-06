@@ -7,7 +7,7 @@
       </div>
       <div>
         <p class="text-[9px] font-bold uppercase t-text-muted tracking-widest">Aggregate Downlink</p>
-        <p class="t-text font-headline font-black text-2xl leading-none">2.4 <span class="text-[11px] font-normal t-text-muted">GB/s</span></p>
+        <p class="t-text font-headline font-black text-2xl leading-none">{{ formatSpeed(aggregateSpeed).value }} <span class="text-[11px] font-normal t-text-muted">{{ formatSpeed(aggregateSpeed).unit }}</span></p>
       </div>
     </div>
 
@@ -56,11 +56,14 @@
       <div *ngIf="showNotifications" class="absolute top-13 right-0 w-72 glass-panel rounded-xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.8)] z-50 overflow-hidden modal-enter">
         <div class="p-4 flex justify-between items-center" style="border-bottom: 1px solid var(--border-subtle); background: var(--surface-card)">
           <span class="text-[10px] font-bold uppercase tracking-widest t-text-sec">Signal Feed</span>
-          <button class="text-[10px] text-primary font-black uppercase hover:underline transition-theme" (click)="clearNotifications()">Clear All</button>
+          <button class="text-[10px] text-primary font-black uppercase hover:underline transition-theme" (click)="notifications.length = 0">Clear All</button>
         </div>
         <div class="p-3 space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
           <div *ngFor="let notif of notifications" class="p-3.5 t-card rounded-lg border">
-            <p class="text-xs font-bold t-text mb-0.5">{{ notif.title }}</p>
+            <div class="flex justify-between items-start mb-0.5">
+              <p class="text-xs font-bold t-text">{{ notif.title }}</p>
+              <span class="text-[8px] t-text-muted whitespace-nowrap ml-2">{{ notif.time | date:'shortTime' }}</span>
+            </div>
             <p class="text-[10px] t-text-muted">{{ notif.detail }}</p>
           </div>
           <div *ngIf="notifications.length === 0" class="py-10 flex flex-col items-center justify-center t-text-muted animate-pulse">

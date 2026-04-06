@@ -67,7 +67,7 @@ func main() {
 	//Enable CORS
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST,GET,OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST,GET,DELETE,OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if c.Request.Method == "OPTIONS" {
@@ -84,6 +84,7 @@ func main() {
 	r.POST("/resume", manager.ResumeDownloadHandler)
 	r.GET("/settings", manager.GetSettingsHandler)
 	r.POST("/settings", manager.UpdateSettingsHandler)
+	r.DELETE("/delete", manager.DeleteDownloadHandler)
 
 	manager.LoadTasks()
 	manager.LoadSettings()
@@ -168,7 +169,7 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 }
 
 // Bridge function
-func SendProgress(taskId string, fileName string, percent float64, totalSize int64) {
+func SendProgress(taskId string, fileName string, percent float64, totalSize int64, speed float64) {
 	conMutex.Lock()
 	defer conMutex.Unlock()
 
@@ -182,6 +183,7 @@ func SendProgress(taskId string, fileName string, percent float64, totalSize int
 		"fileName":  fileName,
 		"percent":   percent,
 		"totalSize": totalSize,
+		"speed":     speed,
 	}
 
 	activeCon.WriteJSON(msg)
@@ -284,6 +286,32 @@ func (dm *DownloadManager) PauseDownloadHandler(c *gin.Context) {
 
 func (dm *DownloadManager) ResumeDownloadHandler(c *gin.Context) {
 	dm.StartDownloadHandler(c)
+}
+
+func (dm *DownloadManager) DeleteDownloadHandler(c *gin.Context) {
+	var req ActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dm.managerMutex.Lock()
+	if cancel, exists := dm.downloadManager[req.Url]; exists {
+		cancel()
+		delete(dm.downloadManager, req.Url)
+	}
+	dm.managerMutex.Unlock()
+
+	dm.dataMutex.Lock()
+	for i := range dm.Tasks {
+		if dm.Tasks[i].ID == req.Url {
+			dm.Tasks = append(dm.Tasks[:i], dm.Tasks[i+1:]...)
+			break
+		}
+	}
+	dm.dataMutex.Unlock()
+	dm.SaveTasks()
+	c.JSON(http.StatusOK, gin.H{"message": "Download deleted"})
 }
 
 func (dm *DownloadManager) GetSettingsHandler(c *gin.Context) {

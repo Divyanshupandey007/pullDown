@@ -41,6 +41,8 @@
     
     <!-- Header -->
     <app-topbar
+      [aggregateSpeed]="aggregateSpeed"
+      [notifications]="notifications"
       (search)="onSearch($event)"
       (resumeAll)="resumeAll()"
       (pauseAll)="pauseAll()"
@@ -85,6 +87,21 @@
               <p class="text-xs t-text-muted mt-3 uppercase tracking-widest font-bold">Optimal Signal Lock</p>
             </div>
           </div>
+        </section>
+
+        <!-- Bandwidth Chart -->
+        <section class="glass-panel rounded-2xl p-7 mb-12 hover:border-primary/30">
+          <div class="flex justify-between items-start mb-4">
+            <div>
+              <h3 class="text-xs font-black uppercase tracking-widest t-text-muted">Bandwidth Monitor</h3>
+              <p class="text-[2rem] font-headline font-black t-text leading-none mt-2">{{ formatSpeed(aggregateSpeed) }}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-[9px] font-bold uppercase t-text-muted tracking-widest">Peak</p>
+              <p class="text-sm font-headline font-black text-primary mt-1">{{ formatSpeed(peakSpeed) }}</p>
+            </div>
+          </div>
+          <canvas #bandwidthCanvas class="w-full" style="height: 120px;"></canvas>
         </section>
 
         <!-- Active Streams -->
@@ -154,7 +171,7 @@
         </div>
         <div class="space-y-3">
           <div *ngFor="let task of activeTasks"
-               class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+               class="group download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
                (click)="showDetailsPanel(task)">
             <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-primary transition-theme">
               <span class="material-symbols-outlined text-2xl">{{ getFileIcon(task.fileName) }}</span>
@@ -162,10 +179,19 @@
             <div class="flex-grow">
               <div class="flex justify-between items-start mb-1.5">
                 <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
-                <span class="text-xs font-black text-primary transition-theme">{{ (task.progress?.toFixed(1) || '0') }}%</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-black text-primary transition-theme">{{ (task.progress?.toFixed(1) || '0') }}%</span>
+                  <button (click)="deleteTask(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
+                    <span class="material-symbols-outlined text-base">delete</span>
+                  </button>
+                </div>
               </div>
               <div class="relative w-full h-1 t-card rounded-full overflow-hidden">
                 <div class="absolute top-0 left-0 h-full laser-progress transition-all duration-700" [style.width.%]="task.progress"></div>
+              </div>
+              <div *ngIf="task.speed" class="flex justify-between mt-1.5">
+                <span class="text-[10px] t-text-muted">{{ formatSpeed(task.speed || 0) }}</span>
+                <span class="text-[10px] text-primary/70">{{ task.eta ? formatETA(task.eta) + ' remaining' : '' }}</span>
               </div>
             </div>
           </div>
@@ -181,7 +207,7 @@
         </div>
         <div class="space-y-3">
           <div *ngFor="let task of tasks"
-               class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+               class="group download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
                (click)="showDetailsPanel(task)">
             <ng-container *ngIf="task.status === 'Completed'">
               <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-green-400 transition-theme">
@@ -190,7 +216,12 @@
               <div class="flex-grow">
                 <div class="flex justify-between items-start mb-1.5">
                   <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
-                  <span class="text-xs font-black text-green-400">COMPLETED</span>
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-black text-green-400">COMPLETED</span>
+                    <button (click)="deleteTask(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
+                      <span class="material-symbols-outlined text-base">delete</span>
+                    </button>
+                  </div>
                 </div>
                 <p class="text-xs t-text-muted">{{ formatBytes(task.totalSize) }}</p>
               </div>
@@ -382,6 +413,14 @@
           <p class="text-[9px] t-text-muted uppercase font-black mb-1.5">Downloaded</p>
           <p class="text-xl font-headline font-black t-text">{{ formatBytes(selectedTask.downloaded) }}</p>
         </div>
+        <div class="t-card p-5 rounded-2xl border">
+          <p class="text-[9px] t-text-muted uppercase font-black mb-1.5">Speed</p>
+          <p class="text-xl font-headline font-black" [ngClass]="selectedTask.speed ? 'text-green-400' : 't-text'">{{ formatSpeed(selectedTask.speed || 0) }}</p>
+        </div>
+        <div class="t-card p-5 rounded-2xl border">
+          <p class="text-[9px] t-text-muted uppercase font-black mb-1.5">ETA</p>
+          <p class="text-xl font-headline font-black" [ngClass]="selectedTask.eta ? 'text-primary' : 't-text'">{{ formatETA(selectedTask.eta || 0) }}</p>
+        </div>
       </div>
 
       <!-- URL -->
@@ -401,6 +440,10 @@
                 (click)="resumeTask(selectedTask)"
                 class="flex-1 py-3 border border-green-500/20 text-green-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-green-500/10 transition-all rounded-xl">
           Resume Stream
+        </button>
+        <button (click)="deleteTask(selectedTask)"
+                class="flex-1 py-3 border border-red-500/20 text-red-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-red-500/10 transition-all rounded-xl">
+          Delete Stream
         </button>
       </div>
     </div>
