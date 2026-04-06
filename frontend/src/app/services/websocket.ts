@@ -9,8 +9,9 @@ export interface Task {
   status: string;
   totalSize: number;
   downloaded: number;
-  // We will calculate 'progress' in the component
   progress?: number;
+  speed?: number;
+  eta?: number;
 }
 
 export interface ProgressMessage {
@@ -19,6 +20,7 @@ export interface ProgressMessage {
   fileName: string
   percent: number
   totalSize: number
+  speed: number
 }
 
 @Injectable({

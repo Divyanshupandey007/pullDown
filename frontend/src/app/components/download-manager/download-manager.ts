@@ -26,6 +26,12 @@ export class DownloadManager implements OnInit {
   activeDownloadCount: number = 0;
   completedCount: number = 0;
   errorCount: number = 0;
+  aggregateSpeed: number = 0;
+  notifications: { title: string; detail: string; time: Date }[] = [];
+  speedHistory: number[] = new Array(60).fill(0);
+  peakSpeed: number = 0;
+
+  @ViewChild('bandwidthCanvas') bandwidthCanvas!: ElementRef<HTMLCanvasElement>;
 
   showModal: boolean = false;
   showDetails: boolean = false;
@@ -342,6 +348,23 @@ export class DownloadManager implements OnInit {
     this.updateStats();
   }
 
+  deleteTask(task: Task, event?: Event) {
+    if (event) event.stopPropagation();
+    this.http.delete('http://localhost:8080/delete', { body: { url: task.id } }).subscribe({
+      next: () => {
+        this.tasks = this.tasks.filter(t => t.id !== task.id);
+        if (this.selectedTask?.id === task.id) {
+          this.selectedTask = null;
+          this.showDetails = false;
+        }
+        this.updateStats();
+        this.cdr.detectChanges();
+        console.log('Deleted:', task.fileName);
+      },
+      error: (e) => console.error('Delete failed', e)
+    });
+  }
+
   //Bulk Actions
   resumeAll() {
     this.tasks.forEach(t => {
@@ -366,15 +389,41 @@ export class DownloadManager implements OnInit {
       task.progress = Math.min(msg.percent, 100);
       if (msg.totalSize > 0) task.totalSize = msg.totalSize;
       if (task.totalSize > 0) task.downloaded = (task.progress / 100) * task.totalSize;
+      task.speed = msg.speed || 0;
+      // Calculate ETA
+      if (task.speed > 0 && task.totalSize > 0 && task.downloaded < task.totalSize) {
+        task.eta = (task.totalSize - task.downloaded) / task.speed;
+      } else {
+        task.eta = 0;
+      }
       if (msg.percent >= 100) {
         task.status = 'Completed';
         task.progress = 100;
+        task.speed = 0;
+        task.eta = 0;
         this.updateStats();
+        // Push notification if enabled
+        if (this.toggles['notifComplete']) {
+          this.notifications.unshift({
+            title: '✅ Download Complete',
+            detail: task.fileName + ' — ' + this.formatBytes(task.totalSize),
+            time: new Date()
+          });
+        }
         // Play sound if enabled
         if (this.toggles['soundEffects']) {
           this.playNotificationSound();
         }
       }
+      // Update aggregate speed
+      this.aggregateSpeed = this.tasks
+        .filter(t => t.status === 'Downloading')
+        .reduce((sum, t) => sum + (t.speed || 0), 0);
+      // Track speed history for bandwidth chart
+      this.speedHistory.push(this.aggregateSpeed);
+      if (this.speedHistory.length > 60) this.speedHistory.shift();
+      if (this.aggregateSpeed > this.peakSpeed) this.peakSpeed = this.aggregateSpeed;
+      this.drawBandwidthChart();
       // Update details panel if this task is selected
       if (this.selectedTask && this.selectedTask.id === task.id) {
         this.detailTitle = task.fileName;
@@ -390,6 +439,94 @@ export class DownloadManager implements OnInit {
     this.totalDownloadedBytes = this.tasks.reduce((acc, t) => acc + (t.downloaded || 0), 0);
   }
 
+  drawBandwidthChart() {
+    if (!this.bandwidthCanvas?.nativeElement) return;
+    const canvas = this.bandwidthCanvas.nativeElement;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Handle HiDPI
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+    const padding = { top: 10, bottom: 5, left: 0, right: 0 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const data = this.speedHistory;
+    const maxVal = Math.max(...data, 1);
+
+    // Draw grid lines (subtle)
+    ctx.strokeStyle = 'rgba(128, 128, 128, 0.08)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i++) {
+      const y = padding.top + (chartH / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(w - padding.right, y);
+      ctx.stroke();
+    }
+
+    // Build points
+    const points: { x: number; y: number }[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const x = padding.left + (i / (data.length - 1)) * chartW;
+      const y = padding.top + chartH - (data[i] / maxVal) * chartH;
+      points.push({ x, y });
+    }
+
+    if (points.length < 2) return;
+
+    // Draw smooth curve using quadratic bezier
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      const prev = points[i - 1];
+      const curr = points[i];
+      const cpx = (prev.x + curr.x) / 2;
+      ctx.quadraticCurveTo(prev.x, prev.y, cpx, (prev.y + curr.y) / 2);
+    }
+    const last = points[points.length - 1];
+    ctx.lineTo(last.x, last.y);
+
+    // Stroke line
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#fb923c';
+    ctx.strokeStyle = accentColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Fill gradient area
+    ctx.lineTo(last.x, padding.top + chartH);
+    ctx.lineTo(points[0].x, padding.top + chartH);
+    ctx.closePath();
+
+    const gradient = ctx.createLinearGradient(0, padding.top, 0, padding.top + chartH);
+    gradient.addColorStop(0, accentColor + '40');
+    gradient.addColorStop(0.5, accentColor + '15');
+    gradient.addColorStop(1, accentColor + '00');
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Draw glow dot on last point with speed > 0
+    if (this.aggregateSpeed > 0) {
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = accentColor;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = accentColor + '30';
+      ctx.fill();
+    }
+  }
+
   formatBytes(bytes: number, decimals = 2) {
     if (!+bytes) return '0 B';
     const k = 1024;
@@ -397,6 +534,24 @@ export class DownloadManager implements OnInit {
     const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+  }
+
+  formatSpeed(bytesPerSec: number): string {
+    if (!bytesPerSec || bytesPerSec <= 0) return '0 B/s';
+    return this.formatBytes(bytesPerSec) + '/s';
+  }
+
+  formatETA(seconds: number): string {
+    if (!seconds || seconds <= 0) return '--';
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.round(seconds % 60);
+      return `${m}m ${s}s`;
+    }
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    return `${h}h ${m}m`;
   }
 
   getFileIcon(fileName: string): string {
