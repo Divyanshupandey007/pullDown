@@ -10,15 +10,15 @@ import { FormsModule } from '@angular/forms';
 })
 export class TopbarComponent implements OnInit {
   @Input() aggregateSpeed: number = 0;
+  @Input() taskCount: number = 0;
+  @Input() currentToast: { message: string; icon: string; color: string; removing?: boolean } | null = null;
   @Output() search = new EventEmitter<string>();
   @Output() addUrl = new EventEmitter<void>();
   @Output() resumeAll = new EventEmitter<void>();
   @Output() pauseAll = new EventEmitter<void>();
   @Output() stopAll = new EventEmitter<void>();
-  @Output() themeChange = new EventEmitter<string>();
 
   searchText: string = '';
-  activeMode: string = 'auto';
   showNotifications = false;
   showAccountMenu = false;
   showAboutModal = false;
@@ -35,19 +35,6 @@ export class TopbarComponent implements OnInit {
 
   onSearchChange() {
     this.search.emit(this.searchText);
-  }
-
-  setTheme(mode: string) {
-    this.activeMode = mode;
-    const themes: Record<string, { accent: string; glow: string }> = {
-      'snail': { accent: '#facc15', glow: 'rgba(250, 204, 21, 0.15)' },
-      'auto': { accent: '#fb923c', glow: 'rgba(251, 146, 60, 0.15)' },
-      'turbo': { accent: '#4ade80', glow: 'rgba(74, 222, 128, 0.15)' }
-    };
-    const config = themes[mode];
-    document.documentElement.style.setProperty('--accent-color', config.accent);
-    document.documentElement.style.setProperty('--glow-color', config.glow);
-    this.themeChange.emit(mode);
   }
 
   toggleNotifications(event: Event) {

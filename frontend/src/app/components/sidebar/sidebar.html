@@ -2,8 +2,8 @@
   class="h-screen flex-shrink-0 flex flex-col backdrop-blur-3xl py-8 z-[60] transition-all duration-500"
   [style.background]="'var(--sidebar-bg)'"
   [style.borderRight]="'1px solid var(--border-subtle)'"
-  [ngClass]="isCollapsed ? 'w-20' : 'w-60'">
-  <div class="px-7 mb-10 flex items-center" [ngClass]="isCollapsed ? 'justify-center' : 'justify-between'">
+  [ngClass]="isCollapsed ? 'w-16 md:w-20' : 'w-48 md:w-60'">
+  <div class="px-4 md:px-7 mb-10 flex items-center" [ngClass]="isCollapsed ? 'justify-center' : 'justify-between'">
     <div *ngIf="!isCollapsed" class="transition-all duration-300">
       <h1 class="text-xl font-black italic tracking-tighter" style="color: var(--text-primary)">PullDown</h1>
     </div>
@@ -14,11 +14,46 @@
 
   <nav class="flex flex-col flex-grow space-y-0.5">
     <button *ngFor="let tab of tabs" (click)="selectTab(tab.id)"
-      class="tab-btn flex items-center gap-4 px-7 py-3.5 transition-theme font-headline uppercase tracking-widest text-[11px]"
+      class="tab-btn flex items-center gap-3 md:gap-4 px-4 md:px-7 py-3.5 transition-theme font-headline uppercase tracking-widest text-[10px] md:text-[11px]"
       [ngClass]="activeTab === tab.id ? 'text-primary bg-primary/10 border-r-[3px] border-primary' : 'hover:bg-white/5'"
       [style.color]="activeTab !== tab.id ? 'var(--text-muted)' : ''">
       <span class="material-symbols-outlined text-xl">{{ tab.icon }}</span>
       <span *ngIf="!isCollapsed">{{ tab.label }}</span>
     </button>
   </nav>
+
+  <!-- Mode Selector (bottom of sidebar) -->
+  <div class="px-4 mt-auto pt-6" style="border-top: 1px solid var(--border-subtle);">
+    <!-- Description bubble (appears on hover, above buttons) -->
+    <div class="overflow-hidden transition-all duration-200"
+         [style.height]="hoveredMode && !isCollapsed ? '28px' : '0px'"
+         [style.opacity]="hoveredMode ? '1' : '0'">
+      <p class="text-[9px] font-bold uppercase tracking-widest text-center mb-2"
+         [style.color]="'var(--accent-color)'">
+        {{ hoveredMode === 'snail' ? 'Bandwidth saver'
+         : hoveredMode === 'auto' ? 'Balanced speed'
+         : hoveredMode === 'turbo' ? 'Maximum speed' : '' }}
+      </p>
+    </div>
+
+    <!-- Mode buttons -->
+    <div class="flex gap-1" [ngClass]="isCollapsed ? 'flex-col items-center' : 'justify-center'">
+      <button *ngFor="let mode of modes"
+        class="mode-btn relative rounded-lg transition-all duration-200 flex items-center justify-center"
+        [ngClass]="{
+          'bg-primary/15 ring-1 ring-primary/30': activeMode === mode.id,
+          'hover:bg-white/5': activeMode !== mode.id
+        }"
+        [class]="isCollapsed ? 'w-10 h-10' : 'flex-1 py-2'"
+        (click)="selectMode(mode.id)"
+        (mouseenter)="hoveredMode = mode.id"
+        (mouseleave)="hoveredMode = null">
+        <span class="text-sm">{{ mode.emoji }}</span>
+        <span *ngIf="!isCollapsed" class="text-[9px] font-bold uppercase tracking-wider ml-1.5"
+              [style.color]="activeMode === mode.id ? 'var(--accent-color)' : 'var(--text-muted)'">
+          {{ mode.label }}
+        </span>
+      </button>
+    </div>
+  </div>
 </aside>

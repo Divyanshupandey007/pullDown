@@ -1,29 +1,26 @@
-<div class="flex h-screen w-full overflow-hidden font-body select-none" style="background: var(--surface); color: var(--text-primary)">
+<div class="flex h-screen w-full overflow-hidden font-body select-none" style="background: var(--surface); color: var(--text-primary)"
+     (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)">
 
   <!-- New Download Modal -->
   <div *ngIf="showModal" class="fixed inset-0 z-[100] flex items-center justify-center">
     <div class="absolute inset-0 bg-black/70 backdrop-blur-xl modal-backdrop-enter" (click)="closeModal()"></div>
-    <div class="glass-panel w-full max-w-lg p-8 rounded-2xl relative z-10 modal-enter">
+    <div class="glass-panel w-full max-w-lg p-5 sm:p-8 rounded-2xl relative z-10 modal-enter mx-4">
       <button class="absolute top-5 right-5 t-text-muted hover:text-primary transition-colors" (click)="closeModal()">
         <span class="material-symbols-outlined text-xl">close</span>
       </button>
-      <h3 class="text-2xl font-headline font-bold mb-6 text-primary">Engage New Link</h3>
-      <div class="t-card border rounded-xl p-10 flex flex-col items-center justify-center mb-6 hover:border-primary/50 transition-colors group cursor-pointer">
-        <span class="material-symbols-outlined text-4xl t-text-muted group-hover:text-primary mb-2 transition-colors">cloud_upload</span>
-        <p class="text-xs font-label t-text-sec uppercase tracking-widest">Drop URL or Torrent Packet</p>
-      </div>
+      <h3 class="text-2xl font-headline font-bold mb-6 text-primary">Add Download</h3>
       <div class="space-y-5">
         <div>
-          <label class="text-[10px] uppercase font-bold t-text-muted tracking-widest mb-2 block">Resource Identifier</label>
+          <label class="text-[10px] uppercase font-bold t-text-muted tracking-widest mb-2 block">Paste URL</label>
           <input #urlInputField
                  class="w-full t-input border rounded-xl px-5 py-3.5 text-sm focus:ring-1 focus:ring-primary focus:outline-none transition-theme"
-                 placeholder="https://vortex.io/stream/..."
+                 placeholder="https://example.com/file.zip"
                  type="text"
                  [(ngModel)]="urlInput"
                  (keyup.enter)="startDownload()" />
         </div>
-        <button (click)="startDownload()" class="w-full py-4 laser-progress rounded-xl text-zinc-950 font-headline font-black uppercase tracking-widest text-xs hover:brightness-110 active:scale-[0.98] transition-all">
-          Initialize Sequential Stream
+        <button (click)="startDownload()" class="w-full py-4 bg-primary rounded-xl text-zinc-950 font-headline font-black uppercase tracking-widest text-xs hover:brightness-110 active:scale-[0.98] transition-all">
+          Start Download
         </button>
       </div>
     </div>
@@ -32,8 +29,10 @@
   <!-- Sidebar -->
   <app-sidebar
     [activeTab]="activeTab"
+    [activeMode]="activeMode"
     (tabChange)="switchTab($event)"
-    (openAddModal)="openAddModal()">
+    (openAddModal)="openAddModal()"
+    (modeChange)="onModeChange($event)">
   </app-sidebar>
 
   <!-- Main Content -->
@@ -43,123 +42,138 @@
     <app-topbar
       [aggregateSpeed]="aggregateSpeed"
       [notifications]="notifications"
+      [currentToast]="currentToast"
       (search)="onSearch($event)"
       (resumeAll)="resumeAll()"
       (pauseAll)="pauseAll()"
-      (stopAll)="stopAll()">
+      (stopAll)="stopAll()"
+      [taskCount]="tasks.length">
     </app-topbar>
 
     <!-- Content Area -->
-    <main class="flex-grow p-10 overflow-y-auto custom-scrollbar">
+    <main class="flex-grow p-4 md:p-8 min-h-0"
+          [ngClass]="activeTab === 'dashboard' ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar'">
 
       <!-- Dashboard View -->
-      <div *ngIf="activeTab === 'dashboard'" class="fade-in-stagger">
-        <!-- Metric Cards -->
-        <section class="grid grid-cols-3 gap-6 mb-12">
-          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:border-primary/30">
-            <div class="flex justify-between items-start relative z-10">
-              <span class="material-symbols-outlined text-primary transition-theme text-2xl">hub</span>
-              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Total Data</span>
-            </div>
-            <div class="mt-6 relative z-10">
-              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ formatBytes(totalDownloadedBytes) }}</h3>
-            </div>
+      <div *ngIf="activeTab === 'dashboard'" class="flex flex-col h-full">
+
+        <!-- Header row (always visible) -->
+        <div class="flex items-center justify-between mb-5 flex-shrink-0">
+          <h2 class="text-lg font-headline font-bold t-text tracking-tight">Downloads</h2>
+          <button class="bg-primary px-5 py-2 rounded-xl text-black font-headline font-bold text-xs tracking-wide transition-all hover:brightness-110 active:scale-95 flex items-center gap-2"
+                  (click)="openAddModal()">
+            <span class="material-symbols-outlined text-sm">add</span>
+            Add Download
+          </button>
+        </div>
+
+        <!-- Empty State (like FDM — clean, centered) -->
+        <div *ngIf="tasks.length === 0" class="flex-grow flex items-center justify-center rounded-2xl"
+             style="border: 1px dashed var(--border-subtle);">
+          <div class="text-center">
+            <span class="material-symbols-outlined t-text-muted text-5xl mb-4 block" style="opacity: 0.3;">link</span>
+            <p class="t-text-muted text-sm">Drag-and-drop URL or paste a link to start</p>
           </div>
+        </div>
 
-          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between group hover:border-primary/30">
-            <div class="flex justify-between items-start">
-              <span class="material-symbols-outlined text-primary transition-theme text-2xl">offline_bolt</span>
-              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Active Streams</span>
-            </div>
-            <div class="mt-6">
-              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ activeDownloadCount }}</h3>
-              <p class="text-xs text-primary mt-3 font-bold transition-theme">{{ completedCount }} completed</p>
-            </div>
-          </div>
-
-          <div class="glass-panel p-7 rounded-2xl flex flex-col justify-between group hover:border-primary/30">
-            <div class="flex justify-between items-start">
-              <span class="material-symbols-outlined text-primary transition-theme text-2xl">layers</span>
-              <span class="text-[10px] font-bold t-text-muted uppercase tracking-widest">Total Tasks</span>
-            </div>
-            <div class="mt-6">
-              <h3 class="text-[2.75rem] font-headline font-black t-text leading-none">{{ tasks.length > 9 ? tasks.length : '0' + tasks.length }}</h3>
-              <p class="text-xs t-text-muted mt-3 uppercase tracking-widest font-bold">Optimal Signal Lock</p>
-            </div>
-          </div>
-        </section>
-
-        <!-- Bandwidth Chart -->
-        <section class="glass-panel rounded-2xl p-7 mb-12 hover:border-primary/30">
-          <div class="flex justify-between items-start mb-4">
-            <div>
-              <h3 class="text-xs font-black uppercase tracking-widest t-text-muted">Bandwidth Monitor</h3>
-              <p class="text-[2rem] font-headline font-black t-text leading-none mt-2">{{ formatSpeed(aggregateSpeed) }}</p>
-            </div>
-            <div class="text-right">
-              <p class="text-[9px] font-bold uppercase t-text-muted tracking-widest">Peak</p>
-              <p class="text-sm font-headline font-black text-primary mt-1">{{ formatSpeed(peakSpeed) }}</p>
-            </div>
-          </div>
-          <canvas #bandwidthCanvas class="w-full" style="height: 120px;"></canvas>
-        </section>
-
-        <!-- Active Streams -->
-        <section>
-          <div class="flex items-end justify-between mb-7">
-            <div>
-              <h2 class="text-[1.6rem] font-headline font-bold t-text tracking-tight">Active Streams</h2>
-              <p class="text-[13px] t-text-muted mt-1">Real-time downlink prioritization</p>
-            </div>
-            <button class="bg-primary px-7 py-3 rounded-xl text-black font-headline font-black text-[11px] uppercase tracking-[0.15em] shadow-lg transition-theme hover:brightness-110 active:scale-95"
-                    (click)="openAddModal()">
-              Initialize Stream
-            </button>
-          </div>
-
-          <div class="space-y-3">
-            <!-- Empty State -->
-            <div *ngIf="filteredTasks.length === 0" class="glass-panel p-16 flex flex-col items-center justify-center rounded-2xl text-center">
-              <span class="material-symbols-outlined t-text-muted text-5xl mb-4">cloud_off</span>
-              <p class="italic t-text-muted text-sm">No active streams detected. Initialize a new downlink.</p>
-            </div>
-
-            <!-- Download Cards -->
+        <!-- Downloads List (scrollable, only when tasks exist) -->
+        <div *ngIf="tasks.length > 0" class="flex-grow min-h-0 overflow-y-auto custom-scrollbar pr-1">
+          <div class="space-y-2">
             <div *ngFor="let task of filteredTasks"
-                 class="download-card glass-panel p-5 rounded-2xl flex items-center gap-5 cursor-pointer transition-all"
+                 class="download-card glass-panel p-4 rounded-2xl cursor-pointer transition-all"
                  [ngClass]="{'active-card': selectedTask === task}"
                  (click)="showDetailsPanel(task)">
-              
-              <div class="w-12 h-12 rounded-xl t-card border flex items-center justify-center text-primary transition-theme">
-                <span class="material-symbols-outlined text-2xl">{{ getFileIcon(task.fileName) }}</span>
+
+              <div class="flex items-center gap-3 mb-2">
+                <div class="w-9 h-9 rounded-lg t-card border flex items-center justify-center text-primary transition-theme flex-shrink-0">
+                  <span class="material-symbols-outlined text-lg">{{ getFileIcon(task.fileName) }}</span>
+                </div>
+                <div class="flex-grow min-w-0">
+                  <div class="flex items-center gap-2">
+                    <h4 class="font-headline font-bold t-text text-sm truncate">{{ task.fileName }}</h4>
+                    <span class="px-1.5 py-0.5 rounded-md bg-primary/10 text-primary text-[7px] font-bold uppercase tracking-wider border border-primary/20 flex-shrink-0">{{ getFileTag(task.fileName) }}</span>
+                  </div>
+                </div>
+                <span class="text-[11px] font-bold flex-shrink-0 ml-2"
+                      [ngClass]="{'text-primary': task.status === 'Downloading', 'text-yellow-400': task.status === 'Paused', 'text-green-400': task.status === 'Completed', 'text-red-400': task.status === 'Error'}">
+                  {{ task.status === 'Completed' ? 'DONE' : (task.status === 'Paused' ? 'PAUSED' : (task.progress?.toFixed(1) || '0') + '%') }}
+                </span>
               </div>
 
-              <div class="flex-grow min-w-0">
-                <div class="flex justify-between items-start mb-1.5">
-                  <div class="flex items-center gap-3 min-w-0">
-                    <h4 class="font-headline font-bold t-text text-base truncate">{{ task.fileName }}</h4>
-                    <span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[9px] font-black uppercase tracking-widest border border-primary/20 transition-theme flex-shrink-0">{{ getFileTag(task.fileName) }}</span>
-                  </div>
-                  <div class="text-right flex-shrink-0 ml-4">
-                    <span class="text-[9px] font-bold t-text-muted uppercase tracking-widest block">Status</span>
-                    <span class="text-xs font-black transition-theme"
-                          [ngClass]="{'text-primary': task.status === 'Downloading', 'text-yellow-400': task.status === 'Paused', 'text-green-400': task.status === 'Completed', 'text-red-400': task.status === 'Error'}">
-                      {{ task.status === 'Completed' ? 'COMPLETED' : (task.status === 'Paused' ? 'PAUSED' : (task.progress?.toFixed(1) || '0') + '%') }}
-                    </span>
-                  </div>
+              <div class="relative w-full h-1 t-card rounded-full overflow-hidden" *ngIf="task.status !== 'Completed'">
+                <div class="absolute top-0 left-0 h-full transition-all duration-700"
+                     [ngClass]="{'laser-progress': task.status === 'Downloading', 'bg-yellow-500': task.status === 'Paused', 'bg-zinc-600': task.status === 'Error'}"
+                     [style.width.%]="task.progress"></div>
+              </div>
+              <div *ngIf="task.status === 'Completed'" class="relative w-full h-1 bg-green-500/20 rounded-full overflow-hidden">
+                <div class="absolute top-0 left-0 h-full w-full bg-green-500 rounded-full"></div>
+              </div>
+
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between mt-2 gap-2 sm:gap-0">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] t-text-muted">
+                  <span *ngIf="task.status === 'Downloading' && task.speed" class="text-green-400 font-bold">{{ formatSpeed(task.speed || 0) }}</span>
+                  <span>{{ formatBytes(task.downloaded) }} / {{ formatBytes(task.totalSize) }}</span>
+                  <span *ngIf="task.eta && task.status === 'Downloading'" class="text-primary/80">{{ formatETA(task.eta) }} left</span>
                 </div>
-                <div class="relative w-full h-1 t-card rounded-full overflow-hidden" *ngIf="task.status !== 'Completed'">
-                  <div class="absolute top-0 left-0 h-full transition-all duration-700"
-                       [ngClass]="{'laser-progress': task.status === 'Downloading', 'bg-yellow-500': task.status === 'Paused', 'bg-zinc-600': task.status === 'Error'}"
-                       [style.width.%]="task.progress"></div>
-                </div>
-                <div *ngIf="task.status === 'Completed'" class="relative w-full h-1 bg-green-500/20 rounded-full overflow-hidden">
-                  <div class="absolute top-0 left-0 h-full w-full bg-green-500 rounded-full"></div>
+                <div class="flex items-center gap-0.5" (click)="$event.stopPropagation()">
+                  <button *ngIf="task.status === 'Downloading'" (click)="pauseTask(task, $event)" class="p-1 rounded-lg hover:bg-yellow-500/10 text-yellow-500 transition-all" title="Pause">
+                    <span class="material-symbols-outlined text-sm">pause</span>
+                  </button>
+                  <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task, $event)" class="p-1 rounded-lg hover:bg-green-500/10 text-green-400 transition-all" title="Resume">
+                    <span class="material-symbols-outlined text-sm">play_arrow</span>
+                  </button>
+                  <button (click)="deleteTask(task, $event)" class="p-1 rounded-lg hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-all" title="Delete">
+                    <span class="material-symbols-outlined text-sm">close</span>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Bandwidth Monitor (only when downloads exist) -->
+        <section *ngIf="tasks.length > 0" class="glass-panel rounded-2xl p-5 mt-4 flex-shrink-0">
+          <div class="flex justify-between items-center mb-2">
+            <div class="flex items-baseline gap-3">
+              <h3 class="text-[10px] font-bold uppercase tracking-widest t-text-muted">Bandwidth</h3>
+              <p class="text-lg font-headline font-black t-text leading-none">{{ formatSpeed(aggregateSpeed) }}</p>
+            </div>
+            <div class="text-right">
+              <p class="text-[8px] font-bold uppercase t-text-muted tracking-widest">Peak</p>
+              <p class="text-xs font-headline font-bold text-primary">{{ formatSpeed(peakSpeed) }}</p>
+            </div>
+          </div>
+          <canvas #bandwidthCanvas class="w-full" style="height: 70px;"></canvas>
         </section>
+
+        <!-- Stats Row (only when downloads exist) -->
+        <section *ngIf="tasks.length > 0" class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 flex-shrink-0">
+          <div class="glass-panel px-5 py-3 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-primary text-lg">hub</span>
+              <span class="text-[9px] font-bold t-text-muted uppercase tracking-widest">Total Data</span>
+            </div>
+            <span class="text-base font-headline font-black t-text">{{ formatBytes(totalDownloadedBytes) }}</span>
+          </div>
+          <div class="glass-panel px-5 py-3 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-primary text-lg">offline_bolt</span>
+              <span class="text-[9px] font-bold t-text-muted uppercase tracking-widest">Active</span>
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="text-base font-headline font-black t-text">{{ activeDownloadCount }}</span>
+              <span class="text-[9px] text-primary font-bold">{{ completedCount }} done</span>
+            </div>
+          </div>
+          <div class="glass-panel px-5 py-3 rounded-xl flex items-center justify-between">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-primary text-lg">layers</span>
+              <span class="text-[9px] font-bold t-text-muted uppercase tracking-widest">Tasks</span>
+            </div>
+            <span class="text-base font-headline font-black t-text">{{ tasks.length }}</span>
+          </div>
+        </section>
+
       </div>
 
       <!-- Active Streams Tab View -->
@@ -231,18 +245,18 @@
       </div>
 
       <!-- Settings View -->
-      <div *ngIf="activeTab === 'settings'" class="fade-in-stagger">
-        <h2 class="text-[1.6rem] font-headline font-black mb-8 t-text">System Core Configuration</h2>
-        <div class="flex gap-8 min-h-[480px]">
-          <aside class="w-56 flex-shrink-0 space-y-1.5">
-            <button (click)="setSettingsTab('general')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'general' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">General</button>
-            <button (click)="setSettingsTab('connection')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'connection' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Connection</button>
-            <button (click)="setSettingsTab('proxy')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'proxy' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Proxy &amp; VPN</button>
-            <button (click)="setSettingsTab('automation')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'automation' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Automation</button>
-            <button (click)="setSettingsTab('notifications')" class="w-full text-left px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme" [ngClass]="activeSettingsTab === 'notifications' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Notifications</button>
+      <div *ngIf="activeTab === 'settings'" class="fade-in-stagger pb-10">
+        <h2 class="text-2xl sm:text-[1.6rem] font-headline font-black mb-6 sm:mb-8 t-text">System Core Configuration</h2>
+        <div class="flex flex-col md:flex-row gap-4 sm:gap-8 min-h-[480px]">
+          <aside class="w-full md:w-56 flex-shrink-0 space-y-1.5 flex flex-row md:flex-col overflow-x-auto custom-scrollbar pb-2 md:pb-0">
+            <button (click)="setSettingsTab('general')" class="flex-1 md:w-full text-center md:text-left px-3 sm:px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme whitespace-nowrap" [ngClass]="activeSettingsTab === 'general' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">General</button>
+            <button (click)="setSettingsTab('connection')" class="flex-1 md:w-full text-center md:text-left px-3 sm:px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme whitespace-nowrap" [ngClass]="activeSettingsTab === 'connection' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Connection</button>
+            <button (click)="setSettingsTab('proxy')" class="flex-1 md:w-full text-center md:text-left px-3 sm:px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme whitespace-nowrap" [ngClass]="activeSettingsTab === 'proxy' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Proxy &amp; VPN</button>
+            <button (click)="setSettingsTab('automation')" class="flex-1 md:w-full text-center md:text-left px-3 sm:px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme whitespace-nowrap" [ngClass]="activeSettingsTab === 'automation' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Automation</button>
+            <button (click)="setSettingsTab('notifications')" class="flex-1 md:w-full text-center md:text-left px-3 sm:px-5 py-3.5 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-theme whitespace-nowrap" [ngClass]="activeSettingsTab === 'notifications' ? 'bg-primary/10 border border-primary/20 text-primary' : 'hover:bg-white/5 t-text-muted border border-transparent'">Notifications</button>
           </aside>
 
-          <div class="flex-grow glass-panel rounded-2xl p-8 overflow-y-auto custom-scrollbar">
+          <div class="flex-grow glass-panel rounded-2xl p-4 sm:p-8 overflow-y-auto custom-scrollbar">
             <!-- General -->
             <div *ngIf="activeSettingsTab === 'general'" class="space-y-10">
               <div class="grid grid-cols-2 gap-8">
@@ -449,12 +463,15 @@
     </div>
   </aside>
 
-  <!-- FAB -->
-  <div class="fixed bottom-10 right-10 z-[65]">
-    <button class="w-16 h-16 rounded-2xl bg-primary text-black shadow-[0_16px_32px_-8px_rgba(0,0,0,0.5)] border border-white/20 flex items-center justify-center transition-all hover:scale-110 active:scale-90 hover:rotate-90 group transition-theme"
-            (click)="openAddModal()">
-      <span class="material-symbols-outlined text-3xl font-bold">add</span>
-    </button>
+
+
+  <!-- Drag & Drop Overlay -->
+  <div *ngIf="isDragging" class="drag-overlay">
+    <div class="drag-overlay-inner">
+      <span class="material-symbols-outlined text-5xl text-primary mb-3">download</span>
+      <p class="text-lg font-headline font-bold t-text">Drop link to download</p>
+      <p class="text-xs t-text-muted mt-1">URL will open in the download dialog</p>
+    </div>
   </div>
 
 </div>

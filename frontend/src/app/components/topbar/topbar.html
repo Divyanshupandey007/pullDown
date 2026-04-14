@@ -1,44 +1,31 @@
-<header class="h-[72px] flex-shrink-0 flex items-center justify-between px-10" style="border-bottom: 1px solid var(--border-subtle)">
-  <div class="flex items-center gap-8">
-    <!-- Speed Stats -->
-    <div class="flex items-center gap-3">
-      <div class="p-2.5 t-card border rounded-xl transition-theme">
-        <span class="material-symbols-outlined text-primary text-xl">speed</span>
+<header class="h-[72px] flex-shrink-0 flex items-center justify-between px-4 md:px-10" style="border-bottom: 1px solid var(--border-subtle)">
+  <div class="flex items-center gap-3 md:gap-8">
+    <!-- Speed Stats (only when downloads exist) -->
+    <div *ngIf="taskCount > 0" class="flex items-center gap-2 md:gap-3">
+      <div class="p-1.5 md:p-2.5 t-card border rounded-xl transition-theme">
+        <span class="material-symbols-outlined text-primary text-lg md:text-xl">speed</span>
       </div>
       <div>
-        <p class="text-[9px] font-bold uppercase t-text-muted tracking-widest">Aggregate Downlink</p>
-        <p class="t-text font-headline font-black text-2xl leading-none">{{ formatSpeed(aggregateSpeed).value }} <span class="text-[11px] font-normal t-text-muted">{{ formatSpeed(aggregateSpeed).unit }}</span></p>
+        <p class="text-[8px] md:text-[9px] font-bold uppercase t-text-muted tracking-widest">Aggregate Downlink</p>
+        <p class="t-text font-headline font-black text-lg md:text-2xl leading-none">{{ formatSpeed(aggregateSpeed).value }} <span class="text-[9px] md:text-[11px] font-normal t-text-muted">{{ formatSpeed(aggregateSpeed).unit }}</span></p>
       </div>
     </div>
 
-    <!-- Mode Selector -->
-    <div class="flex items-center t-card p-0.5 rounded-xl border">
-      <button 
-        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
-        [ngClass]="activeMode === 'snail' ? 'bg-primary text-black' : 't-text-muted'"
-        (click)="setTheme('snail')">
-        🐌 Snail
-      </button>
-      <button 
-        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
-        [ngClass]="activeMode === 'auto' ? 'bg-primary text-black' : 't-text-muted'"
-        (click)="setTheme('auto')">
-        ⚡ Auto
-      </button>
-      <button 
-        class="px-4 py-2 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-all flex items-center gap-1.5"
-        [ngClass]="activeMode === 'turbo' ? 'bg-primary text-black' : 't-text-muted'"
-        (click)="setTheme('turbo')">
-        🚀 Turbo
-      </button>
+    <!-- Inline Toast Notification -->
+    <div class="flex items-center min-w-0">
+      <div *ngIf="currentToast" class="topbar-toast flex items-center gap-1.5 md:gap-2.5 px-3 md:px-4 py-1.5 md:py-2 rounded-xl"
+           [class.topbar-toast-out]="currentToast.removing">
+        <span class="material-symbols-outlined text-sm" [style.color]="currentToast.color">{{ currentToast.icon }}</span>
+        <span class="text-[9px] md:text-[11px] font-semibold t-text truncate max-w-[100px] md:max-w-none">{{ currentToast.message }}</span>
+      </div>
     </div>
   </div>
 
-  <div class="flex items-center gap-5">
+  <div class="flex items-center gap-3 md:gap-5">
     <!-- Search -->
-    <div class="relative">
+    <div class="relative hidden sm:block">
       <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-base t-text-muted">search</span>
-      <input class="t-input border rounded-xl pl-9 pr-4 py-2.5 text-xs w-52 focus:outline-none focus:border-primary/50 transition-all"
+      <input class="t-input border rounded-xl pl-9 pr-4 py-2.5 text-xs w-32 md:w-52 focus:outline-none focus:border-primary/50 transition-all"
              placeholder="Search downloads..."
              [(ngModel)]="searchText"
              (ngModelChange)="onSearchChange()" />
