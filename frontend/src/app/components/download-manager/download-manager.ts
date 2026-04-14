@@ -33,6 +33,12 @@ export class DownloadManager implements OnInit {
 
   @ViewChild('bandwidthCanvas') bandwidthCanvas!: ElementRef<HTMLCanvasElement>;
 
+  // Toast system
+  currentToast: { message: string; icon: string; color: string; removing?: boolean } | null = null;
+  private toastTimeout: any;
+  isDragging: boolean = false;
+  activeMode: string = 'auto';
+
   showModal: boolean = false;
   showDetails: boolean = false;
   detailTitle: string = '--';
@@ -322,34 +328,32 @@ export class DownloadManager implements OnInit {
       this.selectTask(newTask);
     } else { existing.status = 'Downloading'; }
     this.http.post('http://localhost:8080/download', { url: url }).subscribe();
+    this.showToast('Download started', 'download', 'var(--accent-color)');
     this.updateStats();
   }
 
   // Individual Actions
   pauseTask(task: Task, event?: Event) {
     if (event) event.stopPropagation();
-    console.log('Pause triggered for:', task.fileName);
     task.status = 'Paused';
-    this.http.post('http://localhost:8080/pause', { url: task.id }).subscribe({
-      next: () => console.log('Pause request successful'),
-      error: (e) => console.error('Pause request failed', e)
-    });
+    task.speed = 0;
+    task.eta = 0;
+    this.http.post('http://localhost:8080/pause', { url: task.id }).subscribe();
+    this.showToast(task.fileName + ' paused', 'pause', '#eab308');
     this.updateStats();
   }
 
   resumeTask(task: Task, event?: Event) {
     if (event) event.stopPropagation();
-    console.log('Resume triggered for:', task.fileName);
     task.status = 'Downloading';
-    this.http.post('http://localhost:8080/resume', { url: task.id }).subscribe({
-      next: () => console.log('Resume request successful'),
-      error: (e) => console.error('Resume request failed', e)
-    });
+    this.http.post('http://localhost:8080/resume', { url: task.id }).subscribe();
+    this.showToast(task.fileName + ' resumed', 'play_arrow', '#4ade80');
     this.updateStats();
   }
 
   deleteTask(task: Task, event?: Event) {
     if (event) event.stopPropagation();
+    const name = task.fileName;
     this.http.delete('http://localhost:8080/delete', { body: { url: task.id } }).subscribe({
       next: () => {
         this.tasks = this.tasks.filter(t => t.id !== task.id);
@@ -358,8 +362,8 @@ export class DownloadManager implements OnInit {
           this.showDetails = false;
         }
         this.updateStats();
+        this.showToast(name + ' deleted', 'delete', '#f87171');
         this.cdr.detectChanges();
-        console.log('Deleted:', task.fileName);
       },
       error: (e) => console.error('Delete failed', e)
     });
@@ -576,5 +580,57 @@ export class DownloadManager implements OnInit {
     if (lower.endsWith('.mp3') || lower.endsWith('.wav')) return 'Audio';
     if (lower.endsWith('.pdf') || lower.endsWith('.doc')) return 'Document';
     return 'File';
+  }
+
+  // Toast notification system — shows inline in topbar
+  showToast(message: string, icon: string, color: string) {
+    if (this.toastTimeout) clearTimeout(this.toastTimeout);
+    this.currentToast = { message, icon, color, removing: false };
+    this.cdr.detectChanges();
+    this.toastTimeout = setTimeout(() => {
+      if (this.currentToast) this.currentToast.removing = true;
+      this.cdr.detectChanges();
+      setTimeout(() => {
+        this.currentToast = null;
+        this.cdr.detectChanges();
+      }, 250);
+    }, 3000);
+  }
+
+  // Mode change handler (from sidebar)
+  onModeChange(mode: string) {
+    this.activeMode = mode;
+    const themes: Record<string, { accent: string; glow: string }> = {
+      'snail': { accent: '#facc15', glow: 'rgba(250, 204, 21, 0.15)' },
+      'auto': { accent: '#fb923c', glow: 'rgba(251, 146, 60, 0.15)' },
+      'turbo': { accent: '#4ade80', glow: 'rgba(74, 222, 128, 0.15)' }
+    };
+    const config = themes[mode];
+    document.documentElement.style.setProperty('--accent-color', config.accent);
+    document.documentElement.style.setProperty('--glow-color', config.glow);
+  }
+
+  // Drag & drop
+  onDragOver(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = true;
+  }
+
+  onDragLeave(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+  }
+
+  onDrop(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    this.isDragging = false;
+    const text = event.dataTransfer?.getData('text/plain') || event.dataTransfer?.getData('text/uri-list') || '';
+    if (text && (text.startsWith('http://') || text.startsWith('https://'))) {
+      this.urlInput = text;
+      this.openAddModal();
+    }
   }
 }
