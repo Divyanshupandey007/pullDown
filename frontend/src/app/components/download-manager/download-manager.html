@@ -101,7 +101,8 @@
               </div>
 
               <div class="relative w-full h-1 t-card rounded-full overflow-hidden" *ngIf="task.status !== 'Completed'">
-                <div class="absolute top-0 left-0 h-full transition-all duration-700"
+                <div class="absolute top-0 left-0 h-full"
+                     style="transition: width 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);"
                      [ngClass]="{'laser-progress': task.status === 'Downloading', 'bg-yellow-500': task.status === 'Paused', 'bg-zinc-600': task.status === 'Error'}"
                      [style.width.%]="task.progress"></div>
               </div>
