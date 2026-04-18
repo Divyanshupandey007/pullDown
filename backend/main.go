@@ -7,8 +7,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -42,14 +46,15 @@ type DownloadManager struct {
 
 	config   Config
 	settings Settings
+
+	limiter *BandwidthMonitor
 }
 
 // Global Manager
 var (
-	activeCon *websocket.Conn
-	conMutex  sync.Mutex
-
-	manager = NewDownloadManager()
+	clients    = make(map[*websocket.Conn]bool)
+	clientsMux sync.Mutex
+	manager    = NewDownloadManager()
 )
 
 // Upgrade http request to websocket
@@ -85,12 +90,53 @@ func main() {
 	r.GET("/settings", manager.GetSettingsHandler)
 	r.POST("/settings", manager.UpdateSettingsHandler)
 	r.DELETE("/delete", manager.DeleteDownloadHandler)
+	r.POST("/mode", manager.SetModeHandler)
 
 	manager.LoadTasks()
 	manager.LoadSettings()
 
-	//Run Server
-	r.Run(manager.config.Port)
+	manager.limiter.Start()
+
+	srv := &http.Server{
+		Addr:    manager.config.Port,
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server error: %s\n", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down... saving state")
+
+	manager.managerMutex.Lock()
+	for url, cancel := range manager.downloadManager {
+		cancel()
+		delete(manager.downloadManager, url)
+	}
+	manager.managerMutex.Unlock()
+
+	manager.dataMutex.Lock()
+	for i := range manager.Tasks {
+		if manager.Tasks[i].Status == "Downloading" {
+			manager.Tasks[i].Status = "Paused"
+		}
+	}
+
+	manager.dataMutex.Unlock()
+	manager.SaveTasks()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	manager.limiter.Stop()
+	srv.Shutdown(ctx)
+
+	log.Println("Server stopped completely")
 }
 
 func NewDownloadManager() *DownloadManager {
@@ -118,7 +164,9 @@ func NewDownloadManager() *DownloadManager {
 			NotifComplete:   true,
 			NotifError:      true,
 		},
+		limiter: NewBandwidthMonitor(),
 	}
+	dm.limiter.SetParts(cfg.PartsPerFile)
 	return dm
 }
 
@@ -132,9 +180,9 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 	}
 
 	//Save the connection
-	conMutex.Lock()
-	activeCon = con
-	conMutex.Unlock()
+	clientsMux.Lock()
+	clients[con] = true
+	clientsMux.Unlock()
 
 	//Send tasks immediately upon connection
 	dm.dataMutex.Lock()
@@ -143,19 +191,17 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 		"tasks": dm.Tasks,
 	}
 	dm.dataMutex.Unlock()
-
-	conMutex.Lock()
-	activeCon.WriteJSON(initialMsg)
-	conMutex.Unlock()
+	con.WriteJSON(initialMsg)
 
 	log.Println("Client connected via WebSocket!")
 
 	defer func() {
-		conMutex.Lock()
+		clientsMux.Lock()
 		//Clear the active connection
-		activeCon = nil
-		conMutex.Unlock()
+		delete(clients, con)
+		clientsMux.Unlock()
 		con.Close()
+		log.Println("Client disconnected")
 	}()
 
 	//For keeping connection alive
@@ -169,13 +215,9 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 }
 
 // Bridge function
-func SendProgress(taskId string, fileName string, percent float64, totalSize int64, speed float64) {
-	conMutex.Lock()
-	defer conMutex.Unlock()
-
-	if activeCon == nil {
-		return
-	}
+func SendProgress(taskId string, fileName string, percent float64, totalSize int64, speed float64, eta float64) {
+	clientsMux.Lock()
+	defer clientsMux.Unlock()
 
 	msg := gin.H{
 		"event":     "progress",
@@ -184,9 +226,33 @@ func SendProgress(taskId string, fileName string, percent float64, totalSize int
 		"percent":   percent,
 		"totalSize": totalSize,
 		"speed":     speed,
+		"eta":       eta,
 	}
 
-	activeCon.WriteJSON(msg)
+	for con := range clients {
+		if err := con.WriteJSON(msg); err != nil {
+			con.Close()
+			delete(clients, con)
+		}
+	}
+}
+
+func SendError(taskId string, message string) {
+	clientsMux.Lock()
+	defer clientsMux.Unlock()
+
+	msg := gin.H{
+		"event":   "error",
+		"id":      taskId,
+		"message": message,
+	}
+
+	for con := range clients {
+		if err := con.WriteJSON(msg); err != nil {
+			con.Close()
+			delete(clients, con)
+		}
+	}
 }
 
 // Handler method: Starts when frontend sends the request
@@ -253,6 +319,26 @@ func (dm *DownloadManager) StartDownloadHandler(c *gin.Context) {
 
 }
 
+func (dm *DownloadManager) setTaskError(taskId string, errMsg string) {
+	dm.managerMutex.Lock()
+	if cancel, exists := dm.downloadManager[taskId]; exists {
+		cancel()
+		delete(dm.downloadManager, taskId)
+	}
+	dm.managerMutex.Unlock()
+
+	dm.dataMutex.Lock()
+	for i := range dm.Tasks {
+		if dm.Tasks[i].ID == taskId {
+			dm.Tasks[i].Status = "Error"
+			break
+		}
+	}
+	dm.dataMutex.Unlock()
+	dm.SaveTasks()
+	log.Println("Task error:", taskId, "-", errMsg)
+}
+
 func (dm *DownloadManager) PauseDownloadHandler(c *gin.Context) {
 	var req ActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -302,6 +388,8 @@ func (dm *DownloadManager) DeleteDownloadHandler(c *gin.Context) {
 	}
 	dm.managerMutex.Unlock()
 
+	time.Sleep(500 * time.Millisecond)
+
 	dm.dataMutex.Lock()
 	for i := range dm.Tasks {
 		if dm.Tasks[i].ID == req.Url {
@@ -310,6 +398,14 @@ func (dm *DownloadManager) DeleteDownloadHandler(c *gin.Context) {
 		}
 	}
 	dm.dataMutex.Unlock()
+
+	hash := taskHash(req.Url)
+	cleanupPattern := hash + "_part_*.tmp"
+	matches, _ := filepath.Glob(cleanupPattern)
+	for _, f := range matches {
+		os.Remove(f)
+	}
+
 	dm.SaveTasks()
 	c.JSON(http.StatusOK, gin.H{"message": "Download deleted"})
 }
@@ -336,6 +432,10 @@ func (dm *DownloadManager) UpdateSettingsHandler(c *gin.Context) {
 	dm.config.DownloadDir = newSettings.DownloadPath
 	dm.config.MaxConcurrent = newSettings.MaxDownloads
 	dm.config.PartsPerFile = newSettings.MaxConnections
+	dm.limiter.SetParts(newSettings.MaxConnections)
+
+	dm.semaphore = make(chan struct{}, newSettings.MaxDownloads)
+	log.Println("Settings updated - MaxDownloads", newSettings.MaxDownloads, "PartsPerFile:", newSettings.MaxConnections, "DownloadDir:", newSettings.DownloadPath)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Settings saved"})
 }
@@ -408,4 +508,17 @@ func (dm *DownloadManager) LoadSettings() {
 	if err := json.Unmarshal(bytes, &dm.settings); err != nil {
 		fmt.Println("Error parsing settings.json:", err)
 	}
+}
+
+func (dm *DownloadManager) SetModeHandler(c *gin.Context) {
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	dm.limiter.SetMode(req.Mode)
+	log.Println("Speed mode set to:", req.Mode)
+	c.JSON(http.StatusOK, gin.H{"message": "Mode set to " + req.Mode})
 }

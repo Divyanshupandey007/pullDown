@@ -21,6 +21,13 @@ export interface ProgressMessage {
   percent: number
   totalSize: number
   speed: number
+  eta: number
+}
+
+export interface ErrorMessage {
+  event: string
+  id: string
+  message: string
 }
 
 @Injectable({
@@ -34,6 +41,9 @@ export class Websocket {
 
   // NEW: Channel for loading history
   public historyUpdates$ = new Subject<Task[]>();
+
+  // Channel for error events
+  public errorUpdates$ = new Subject<ErrorMessage>();
 
   constructor() { }
 
@@ -54,6 +64,10 @@ export class Websocket {
         else if (data.event === 'initial_state') {
           // data.tasks comes from the Go backend
           this.historyUpdates$.next(data.tasks);
+        }
+        // 3. Handle Download Errors
+        else if (data.event === 'error') {
+          this.errorUpdates$.next(data);
         }
       } catch (e) {
         console.error('WS Parse Error', e);

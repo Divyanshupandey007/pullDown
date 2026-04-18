@@ -38,6 +38,8 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 	res, err := http.Head(downloadUrl)
 	if err != nil {
 		log.Println("Error fetching HEAD: ", err)
+		dm.setTaskError(taskId, "Connection failed")
+		SendError(taskId, "Connection failed")
 		return
 	}
 
@@ -87,7 +89,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if res.ContentLength > 0 {
 		percent := float64(initialDownloaded) / float64(res.ContentLength) * 100
-		SendProgress(taskId, fileName, percent, res.ContentLength, 0)
+		SendProgress(taskId, fileName, percent, res.ContentLength, 0, 0)
 	}
 
 	//For implementing concurrency
@@ -106,7 +108,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 				if ctx.Err() != nil {
 					return
 				}
-				err := downloadPart(ctx, taskId, downloadUrl, fileName, p, &downloadBytes, res.ContentLength)
+				err := downloadPart(ctx, taskId, downloadUrl, fileName, p, &downloadBytes, res.ContentLength, dm.limiter)
 				if err == nil {
 					return
 				}
@@ -125,12 +127,14 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 
 	if len(errChan) > 0 {
 		fmt.Println("Download failed due to network error")
+		dm.setTaskError(taskId, "Download failed after retries")
+		SendError(taskId, "Download failed after retries")
 		return
 	}
 
 	if ctx.Err() == nil {
 		mergeParts(fileName, len(parts), taskId, dm.config.DownloadDir)
-		SendProgress(taskId, fileName, 100.0, res.ContentLength, 0)
+		SendProgress(taskId, fileName, 100.0, res.ContentLength, 0, 0)
 
 		dm.dataMutex.Lock()
 		for i := range dm.Tasks {
@@ -173,6 +177,8 @@ func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl stri
 	video, err := client.GetVideo(originalUrl)
 	if err != nil {
 		fmt.Println("Error getting video info:", err)
+		dm.setTaskError(originalUrl, "Youtube: "+err.Error())
+		SendError(originalUrl, "Failed to analyze video")
 		return
 	}
 	formats := video.Formats.WithAudioChannels()
@@ -252,7 +258,7 @@ func calculateParts(totalSize int64, numParts int) []Part {
 	return parts
 }
 
-func downloadPart(ctx context.Context, taskId string, url string, fileName string, part Part, progress *int64, totalSize int64) error {
+func downloadPart(ctx context.Context, taskId string, url string, fileName string, part Part, progress *int64, totalSize int64, limiter *BandwidthMonitor) error {
 	// defer wg.Done()
 
 	tmpFileName := fmt.Sprintf("%s_part_%d.tmp", taskHash(taskId), part.Index)
@@ -301,7 +307,7 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 	buf := make([]byte, 32*1024)
 	var bytesDownloadedThisSession int64 = 0
 	lastSent := time.Now()
-	lastBytes := int64(0)
+	lastBytes := atomic.LoadInt64(progress)
 
 	for {
 		//Read data
@@ -313,6 +319,7 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 		//Write data to file upto 'n' bytes
 		if n > 0 {
 			file.Write(buf[:n])
+			limiter.AddBytes(n)
 
 			bytesDownloadedThisSession += int64(n)
 			//Safely add 'n' bytes to shared counter
@@ -322,10 +329,15 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 				elapsed := time.Since(lastSent).Seconds()
 				currBytes := atomic.LoadInt64(progress)
 				speed := float64(currBytes-lastBytes) / elapsed
-				SendProgress(taskId, fileName, math.Min(percent, 100.0), totalSize, speed)
+				var eta float64
+				if speed > 0 {
+					eta = float64(totalSize-currBytes) / speed
+				}
+				SendProgress(taskId, fileName, math.Min(percent, 100.0), totalSize, speed, eta)
 				lastSent = time.Now()
 				lastBytes = currBytes
 			}
+			limiter.Wait(n)
 		}
 		if err != nil {
 			if err == io.EOF {

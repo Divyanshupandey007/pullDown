@@ -2,7 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { ChangeDetectorRef, Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { ProgressMessage, Task, Websocket } from '../../services/websocket';
+import { ErrorMessage, ProgressMessage, Task, Websocket } from '../../services/websocket';
 import { SidebarComponent } from '../../components/sidebar/sidebar';
 import { TopbarComponent } from '../../components/topbar/topbar';
 
@@ -36,6 +36,7 @@ export class DownloadManager implements OnInit {
   // Toast system
   currentToast: { message: string; icon: string; color: string; removing?: boolean } | null = null;
   private toastTimeout: any;
+  private chartDrawScheduled = false;
   isDragging: boolean = false;
   activeMode: string = 'auto';
 
@@ -119,6 +120,18 @@ export class DownloadManager implements OnInit {
 
     this.wsService.progressUpdates$.subscribe((msg: ProgressMessage) => {
       this.updateTask(msg);
+    });
+
+    // Handle download errors from backend
+    this.wsService.errorUpdates$.subscribe((msg: ErrorMessage) => {
+      const task = this.tasks.find(t => t.id === msg.id);
+      if (task) {
+        task.status = 'Error';
+        task.speed = 0;
+        this.updateStats();
+        this.cdr.detectChanges();
+        this.showToast(`${task.fileName} — ${msg.message}`, 'error', '#ef4444');
+      }
     });
 
     // Load settings from backend
@@ -394,12 +407,8 @@ export class DownloadManager implements OnInit {
       if (msg.totalSize > 0) task.totalSize = msg.totalSize;
       if (task.totalSize > 0) task.downloaded = (task.progress / 100) * task.totalSize;
       task.speed = msg.speed || 0;
-      // Calculate ETA
-      if (task.speed > 0 && task.totalSize > 0 && task.downloaded < task.totalSize) {
-        task.eta = (task.totalSize - task.downloaded) / task.speed;
-      } else {
-        task.eta = 0;
-      }
+      // Use backend-provided ETA (more accurate than client-side calculation)
+      task.eta = msg.eta || 0;
       if (msg.percent >= 100) {
         task.status = 'Completed';
         task.progress = 100;
@@ -427,7 +436,14 @@ export class DownloadManager implements OnInit {
       this.speedHistory.push(this.aggregateSpeed);
       if (this.speedHistory.length > 60) this.speedHistory.shift();
       if (this.aggregateSpeed > this.peakSpeed) this.peakSpeed = this.aggregateSpeed;
-      this.drawBandwidthChart();
+      // Throttle chart redraws — schedule one per animation frame
+      if (!this.chartDrawScheduled) {
+        this.chartDrawScheduled = true;
+        requestAnimationFrame(() => {
+          this.drawBandwidthChart();
+          this.chartDrawScheduled = false;
+        });
+      }
       // Update details panel if this task is selected
       if (this.selectedTask && this.selectedTask.id === task.id) {
         this.detailTitle = task.fileName;
@@ -608,6 +624,12 @@ export class DownloadManager implements OnInit {
     const config = themes[mode];
     document.documentElement.style.setProperty('--accent-color', config.accent);
     document.documentElement.style.setProperty('--glow-color', config.glow);
+
+    // Notify backend to adjust speed throttling
+    this.http.post('http://localhost:8080/mode', { mode }).subscribe({
+      next: () => console.log(`Mode set to ${mode}`),
+      error: (err) => console.error('Failed to set mode:', err)
+    });
   }
 
   // Drag & drop
