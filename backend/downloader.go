@@ -9,7 +9,9 @@ import (
 	"log"
 	"math"
 	"mime"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -33,7 +35,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 	defer func() {
 		<-dm.semaphore
 	}()
-	fmt.Println("Starting/Resuming download for: ", downloadUrl)
+	log.Println("Starting/Resuming download for: ", downloadUrl)
 
 	res, err := http.Head(downloadUrl)
 	if err != nil {
@@ -41,6 +43,14 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		dm.setTaskError(taskId, "Connection failed")
 		SendError(taskId, "Connection failed")
 		return
+	}
+	defer res.Body.Close()
+
+	supportsRange := strings.EqualFold(res.Header.Get("Accept-Ranges"), "bytes")
+	numParts := dm.config.PartsPerFile
+	if !supportsRange || res.ContentLength <= 0 {
+		numParts = 1
+		log.Println("Server does not support range requests, using single stream")
 	}
 
 	dm.dataMutex.Lock()
@@ -73,7 +83,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		}
 	}
 
-	parts := calculateParts(res.ContentLength, dm.config.PartsPerFile)
+	parts := calculateParts(res.ContentLength, numParts)
 
 	var initialDownloaded int64 = 0
 
@@ -104,11 +114,14 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		go func(p Part) {
 			defer wg.Done()
 			maxRetries := 5
+			if !dm.settings.AutoRetry {
+				maxRetries = 1
+			}
 			for attempt := 0; attempt < maxRetries; attempt++ {
 				if ctx.Err() != nil {
 					return
 				}
-				err := downloadPart(ctx, taskId, downloadUrl, fileName, p, &downloadBytes, res.ContentLength, dm.limiter)
+				err := downloadPart(ctx, taskId, downloadUrl, fileName, p, &downloadBytes, res.ContentLength, dm.limiter, dm.settings.ProxyHost, dm.settings.ProxyPort, dm.settings.ConnTimeout, dm.settings.EnableProxy)
 				if err == nil {
 					return
 				}
@@ -116,7 +129,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 				if ctx.Err() != nil {
 					return
 				}
-				fmt.Printf("Part %d failed (Attempt %d %d): %v. Retrying in 2 sec...", p.Index, attempt+1, maxRetries, err)
+				log.Printf("Part %d failed (Attempt %d %d): %v. Retrying in 2 sec...", p.Index, attempt+1, maxRetries, err)
 				time.Sleep(2 * time.Second)
 			}
 			errChan <- fmt.Errorf("Part %d failed after %d attempts", p.Index, maxRetries)
@@ -126,7 +139,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 	close(errChan)
 
 	if len(errChan) > 0 {
-		fmt.Println("Download failed due to network error")
+		log.Println("Download failed due to network error")
 		dm.setTaskError(taskId, "Download failed after retries")
 		SendError(taskId, "Download failed after retries")
 		return
@@ -148,7 +161,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		}
 		dm.dataMutex.Unlock()
 		dm.SaveTasks()
-		fmt.Println("Download Complete")
+		log.Println("Download Complete")
 	} else {
 		currBytes := atomic.LoadInt64(&downloadBytes)
 		dm.dataMutex.Lock()
@@ -161,7 +174,7 @@ func (dm *DownloadManager) processDownload(ctx context.Context, taskId string, d
 		}
 		dm.dataMutex.Unlock()
 		dm.SaveTasks()
-		fmt.Println("Download Paused")
+		log.Println("Download Paused")
 	}
 }
 
@@ -171,12 +184,12 @@ func taskHash(taskId string) string {
 }
 
 func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl string) {
-	fmt.Println("Analyzing youtube video:", originalUrl)
+	log.Println("Analyzing youtube video:", originalUrl)
 
 	client := youtube.Client{}
 	video, err := client.GetVideo(originalUrl)
 	if err != nil {
-		fmt.Println("Error getting video info:", err)
+		log.Println("Error getting video info:", err)
 		dm.setTaskError(originalUrl, "Youtube: "+err.Error())
 		SendError(originalUrl, "Failed to analyze video")
 		return
@@ -193,20 +206,24 @@ func (dm *DownloadManager) downloadYoutube(ctx context.Context, originalUrl stri
 
 	if bestFormat == nil {
 		if len(formats) == 0 {
-			fmt.Println("Error: No formats found")
+			log.Println("Error: No formats found for", originalUrl)
+			dm.setTaskError(originalUrl, "No downloadable formats found")
+			SendError(originalUrl, "No downloadable formats found")
 			return
 		}
 		bestFormat = &formats[0]
 	}
-	fmt.Printf("Found format: %s, Quality: %s\n", bestFormat.MimeType, bestFormat.QualityLabel)
+	log.Printf("Found format: %s, Quality: %s\n", bestFormat.MimeType, bestFormat.QualityLabel)
 	//Get direct URL
 	streamURL, err := client.GetStreamURL(video, bestFormat)
 	if err != nil {
-		fmt.Println("Error getting stream URL:", err)
+		log.Println("Error getting stream URL:", err)
+		dm.setTaskError(originalUrl, "Failed to get stream URL")
+		SendError(originalUrl, "Failed to get stream URL")
 		return
 	}
 
-	fmt.Println("Got direct stream URL....")
+	log.Println("Got direct stream URL....")
 	safeTitle := sanitizeFileName(video.Title) + ".mp4"
 
 	dm.dataMutex.Lock()
@@ -237,7 +254,7 @@ func calculateParts(totalSize int64, numParts int) []Part {
 		return []Part{{
 			Index: 0,
 			Start: 0,
-			End:   totalSize - 1,
+			End:   -1,
 		},
 		}
 	}
@@ -258,8 +275,7 @@ func calculateParts(totalSize int64, numParts int) []Part {
 	return parts
 }
 
-func downloadPart(ctx context.Context, taskId string, url string, fileName string, part Part, progress *int64, totalSize int64, limiter *BandwidthMonitor) error {
-	// defer wg.Done()
+func downloadPart(ctx context.Context, taskId string, downloadUrl string, fileName string, part Part, progress *int64, totalSize int64, limiter *BandwidthMonitor, proxyHost string, proxyPort int, connTimeout int, enableProxy bool) error {
 
 	tmpFileName := fmt.Sprintf("%s_part_%d.tmp", taskHash(taskId), part.Index)
 	var currStart = part.Start
@@ -281,16 +297,31 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", downloadUrl, nil)
 	if err != nil {
 		return err
 	}
 
 	//Used Sprintf to return formatted string
-	rangeHeader := fmt.Sprintf("bytes=%d-%d", currStart, part.End)
-	req.Header.Set("Range", rangeHeader)
+	if part.End >= 0 {
+		rangeHeader := fmt.Sprintf("bytes=%d-%d", currStart, part.End)
+		req.Header.Set("Range", rangeHeader)
+	}
 
-	client := &http.Client{}
+	dialer := &net.Dialer{
+		Timeout: time.Duration(connTimeout) * time.Second,
+	}
+	transport := &http.Transport{
+		DialContext: dialer.DialContext,
+	}
+	if enableProxy && proxyHost != "" {
+		proxyAddr, _ := neturl.Parse(fmt.Sprintf("http://%s:%d", proxyHost, proxyPort))
+		transport.Proxy = http.ProxyURL(proxyAddr)
+	}
+
+	client := &http.Client{
+		Transport: transport,
+	}
 	res, err := client.Do(req)
 	if err != nil {
 		return err
@@ -318,7 +349,10 @@ func downloadPart(ctx context.Context, taskId string, url string, fileName strin
 
 		//Write data to file upto 'n' bytes
 		if n > 0 {
-			file.Write(buf[:n])
+			if _, writeErr := file.Write(buf[:n]); writeErr != nil {
+				return fmt.Errorf("disk write error: %w", writeErr)
+			}
+
 			limiter.AddBytes(n)
 
 			bytesDownloadedThisSession += int64(n)
@@ -357,6 +391,17 @@ func mergeParts(fileName string, numParts int, taskId string, downloadDir string
 	outputPath := filepath.Join(downloadDir, fileName)
 	os.MkdirAll(downloadDir, 0755)
 
+	if _, err := os.Stat(outputPath); err == nil {
+		ext := filepath.Ext(fileName)
+		base := strings.TrimSuffix(fileName, ext)
+		for i := 1; ; i++ {
+			candidate := filepath.Join(downloadDir, fmt.Sprintf("%s(%d)%s", base, i, ext))
+			if _, err := os.Stat(candidate); os.IsNotExist(err) {
+				outputPath = candidate
+				break
+			}
+		}
+	}
 	//Create the final file
 	outFile, err := os.Create(outputPath)
 	if err != nil {
@@ -381,5 +426,5 @@ func mergeParts(fileName string, numParts int, taskId string, downloadDir string
 		//Remove the partial files
 		os.Remove(partFileName)
 	}
-	fmt.Println("Files merged into:", fileName)
+	log.Println("Files merged into:", fileName)
 }

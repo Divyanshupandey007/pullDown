@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,7 +54,7 @@ type DownloadManager struct {
 var (
 	clients    = make(map[*websocket.Conn]bool)
 	clientsMux sync.Mutex
-	manager    = NewDownloadManager()
+	manager    *DownloadManager
 )
 
 // Upgrade http request to websocket
@@ -71,7 +71,14 @@ func main() {
 
 	//Enable CORS
 	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+		allowedOrigins := []string{"http://localhost:4200", "http://localhost:8080"}
+		for _, allowed := range allowedOrigins {
+			if origin == allowed {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST,GET,DELETE,OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
@@ -158,7 +165,6 @@ func NewDownloadManager() *DownloadManager {
 			ConnTimeout:     30,
 			AutoStart:       true,
 			CompletionAlert: true,
-			PortBinding:     true,
 			ForceHttps:      true,
 			AutoRetry:       true,
 			NotifComplete:   true,
@@ -195,6 +201,12 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 
 	log.Println("Client connected via WebSocket!")
 
+	con.SetReadDeadline(time.Now().Add(60 * time.Second))
+	con.SetPongHandler(func(string) error {
+		con.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	defer func() {
 		clientsMux.Lock()
 		//Clear the active connection
@@ -202,6 +214,17 @@ func (dm *DownloadManager) wsHandler(c *gin.Context) {
 		clientsMux.Unlock()
 		con.Close()
 		log.Println("Client disconnected")
+	}()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	go func() {
+		for range ticker.C {
+			if err := con.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
 	}()
 
 	//For keeping connection alive
@@ -263,6 +286,17 @@ func (dm *DownloadManager) StartDownloadHandler(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
+	}
+
+	parsedUrl, urlErr := url.ParseRequestURI(req.Url)
+	if urlErr != nil || (parsedUrl.Scheme != "http" && parsedUrl.Scheme != "https") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid URL. Only http:// and https:// are supported."})
+		return
+	}
+
+	if dm.settings.ForceHttps && parsedUrl.Scheme == "http" {
+		parsedUrl.Scheme = "https"
+		req.Url = parsedUrl.String()
 	}
 
 	dm.dataMutex.Lock()
@@ -434,8 +468,15 @@ func (dm *DownloadManager) UpdateSettingsHandler(c *gin.Context) {
 	dm.config.PartsPerFile = newSettings.MaxConnections
 	dm.limiter.SetParts(newSettings.MaxConnections)
 
-	dm.semaphore = make(chan struct{}, newSettings.MaxDownloads)
-	log.Println("Settings updated - MaxDownloads", newSettings.MaxDownloads, "PartsPerFile:", newSettings.MaxConnections, "DownloadDir:", newSettings.DownloadPath)
+	dm.managerMutex.Lock()
+	activeCount := len(dm.downloadManager)
+	dm.managerMutex.Unlock()
+
+	if activeCount == 0 {
+		dm.semaphore = make(chan struct{}, newSettings.MaxDownloads)
+	} else {
+		log.Println("Warning: Cannot update max concurrent downloads while downloads are active. Will take effect after current downloads finish")
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Settings saved"})
 }
@@ -447,14 +488,18 @@ func (dm *DownloadManager) SaveTasks() {
 
 	bytes, err := json.MarshalIndent(dm.Tasks, "", " ")
 	if err != nil {
-		fmt.Println("Error marshalling:", err)
+		log.Println("Error marshalling:", err)
 		return
 	}
 
-	writeErr := os.WriteFile("tasks.json", bytes, 0644)
-	if writeErr != nil {
-		fmt.Println(writeErr)
+	tmpFile := "tasks.json.tmp"
+	if writeErr := os.WriteFile(tmpFile, bytes, 0644); writeErr != nil {
+		log.Println("Error writing tasks temp file:", writeErr)
 		return
+	}
+
+	if renameErr := os.Rename(tmpFile, "tasks.json"); renameErr != nil {
+		log.Println("Error renaming tasks file:", renameErr)
 	}
 }
 
@@ -464,12 +509,12 @@ func (dm *DownloadManager) LoadTasks() {
 
 	bytes, err := os.ReadFile("tasks.json")
 	if err != nil {
-		fmt.Println("Error reading json file:", err)
+		log.Println("Error reading json file:", err)
 		return
 	}
 
 	if err := json.Unmarshal(bytes, &dm.Tasks); err != nil {
-		fmt.Println("Error parsing tasks.json", err)
+		log.Println("Error parsing tasks.json", err)
 		return
 	}
 
@@ -486,12 +531,18 @@ func (dm *DownloadManager) SaveSettings() {
 
 	bytes, err := json.MarshalIndent(dm.settings, "", " ")
 	if err != nil {
-		fmt.Println("Error marshalling settings:", err)
+		log.Println("Error marshalling settings:", err)
 		return
 	}
 
-	if err := os.WriteFile("settings.json", bytes, 0644); err != nil {
-		fmt.Println("Error saving settings:", err)
+	tmpFile := "settings.json.tmp"
+	if err := os.WriteFile(tmpFile, bytes, 0644); err != nil {
+		log.Println("Error writing settings temp file:", err)
+		return
+	}
+
+	if err := os.Rename(tmpFile, "settings.json"); err != nil {
+		log.Println("Error renaming settings file:", err)
 	}
 }
 
@@ -501,12 +552,12 @@ func (dm *DownloadManager) LoadSettings() {
 
 	bytes, err := os.ReadFile("settings.json")
 	if err != nil {
-		fmt.Println("No settings file found, using defaults")
+		log.Println("No settings file found, using defaults")
 		return
 	}
 
 	if err := json.Unmarshal(bytes, &dm.settings); err != nil {
-		fmt.Println("Error parsing settings.json:", err)
+		log.Println("Error parsing settings.json:", err)
 	}
 }
 

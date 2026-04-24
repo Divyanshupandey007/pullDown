@@ -4,6 +4,7 @@
 *.dll
 pulldown
 tasks.json
+settings.json
 
 # Temporary download files
 *.tmp

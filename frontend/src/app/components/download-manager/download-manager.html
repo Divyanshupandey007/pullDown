@@ -96,7 +96,7 @@
                 </div>
                 <span class="text-[11px] font-bold flex-shrink-0 ml-2"
                       [ngClass]="{'text-primary': task.status === 'Downloading', 'text-yellow-400': task.status === 'Paused', 'text-green-400': task.status === 'Completed', 'text-red-400': task.status === 'Error'}">
-                  {{ task.status === 'Completed' ? 'DONE' : (task.status === 'Paused' ? 'PAUSED' : (task.progress?.toFixed(1) || '0') + '%') }}
+                  {{ task.status === 'Completed' ? 'DONE' : (task.status === 'Error' ? 'ERROR' : (task.status === 'Paused' ? 'PAUSED' : (task.progress?.toFixed(1) || '0') + '%')) }}
                 </span>
               </div>
 
@@ -123,7 +123,10 @@
                   <button *ngIf="task.status === 'Paused'" (click)="resumeTask(task, $event)" class="p-1 rounded-lg hover:bg-green-500/10 text-green-400 transition-all" title="Resume">
                     <span class="material-symbols-outlined text-sm">play_arrow</span>
                   </button>
-                  <button (click)="deleteTask(task, $event)" class="p-1 rounded-lg hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-all" title="Delete">
+                  <button *ngIf="task.status === 'Error'" (click)="retryTask(task, $event)" class="p-1 rounded-lg hover:bg-primary/10 text-primary transition-all" title="Retry">
+                    <span class="material-symbols-outlined text-sm">refresh</span>
+                  </button>
+                  <button (click)="requestDelete(task, $event)" class="p-1 rounded-lg hover:bg-red-500/10 text-red-400/60 hover:text-red-400 transition-all" title="Delete">
                     <span class="material-symbols-outlined text-sm">close</span>
                   </button>
                 </div>
@@ -196,7 +199,7 @@
                 <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-black text-primary transition-theme">{{ (task.progress?.toFixed(1) || '0') }}%</span>
-                  <button (click)="deleteTask(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
+                  <button (click)="requestDelete(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
                     <span class="material-symbols-outlined text-base">delete</span>
                   </button>
                 </div>
@@ -233,7 +236,7 @@
                   <h4 class="font-headline font-bold t-text text-base">{{ task.fileName }}</h4>
                   <div class="flex items-center gap-2">
                     <span class="text-xs font-black text-green-400">COMPLETED</span>
-                    <button (click)="deleteTask(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
+                    <button (click)="requestDelete(task, $event)" class="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-red-500/10 text-red-400 transition-all" title="Delete">
                       <span class="material-symbols-outlined text-base">delete</span>
                     </button>
                   </div>
@@ -295,19 +298,7 @@
                 <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Max Connections Per Server</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" [(ngModel)]="maxConnections" (blur)="saveSettings()" /></div>
                 <div><label class="text-[10px] font-black uppercase t-text-muted tracking-widest mb-3 block">Connection Timeout (seconds)</label><input class="w-full t-input border rounded-xl px-4 py-3 text-[13px] text-primary focus:outline-none focus:border-primary/50" type="number" [(ngModel)]="connTimeout" (blur)="saveSettings()" /></div>
               </div>
-              <div class="t-border border-t pt-8">
-                <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Protocol Controls</h4>
-                <div class="space-y-3">
-                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
-                    <div><p class="text-sm font-bold t-text">Dynamic Port Binding</p><p class="text-[10px] t-text-muted uppercase mt-0.5">UPnP / NAT-PMP Protocol Support</p></div>
-                    <div (click)="toggleSetting('portBinding')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [style.background]="toggles['portBinding'] ? '' : 'var(--surface-card)'" [ngClass]="toggles['portBinding'] ? 'bg-primary' : 'border border-white/10'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['portBinding'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0'" [style.background]="!toggles['portBinding'] ? 'var(--text-muted)' : ''"></div></div>
-                  </div>
-                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
-                    <div><p class="text-sm font-bold t-text">Full Packet Encryption</p><p class="text-[10px] t-text-muted uppercase mt-0.5">AES-256 peer-to-peer handshakes</p></div>
-                    <div (click)="toggleSetting('encryption')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['encryption'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['encryption'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
-                  </div>
-                </div>
-              </div>
+
             </div>
             <!-- Proxy & VPN -->
             <div *ngIf="activeSettingsTab === 'proxy'" class="space-y-10">
@@ -334,9 +325,12 @@
               <div>
                 <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Post-Download Actions</h4>
                 <div class="space-y-3">
-                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
-                    <div><p class="text-sm font-bold t-text">Auto-extract Archives</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Unzip .zip and .rar files after download</p></div>
-                    <div (click)="toggleSetting('autoExtract')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['autoExtract'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['autoExtract'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                  <div class="flex items-center justify-between p-5 t-card rounded-2xl border opacity-60">
+                    <div class="flex items-center gap-3">
+                      <div><p class="text-sm font-bold t-text">Auto-extract Archives</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Unzip .zip and .rar files after download</p></div>
+                      <span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[8px] font-bold uppercase tracking-wider border border-primary/20">Coming Soon</span>
+                    </div>
+                    <div class="w-11 h-6 rounded-full relative cursor-not-allowed bg-zinc-800"><div class="absolute top-1 left-1 w-4 h-4 rounded-full bg-zinc-500"></div></div>
                   </div>
                   <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
                     <div><p class="text-sm font-bold t-text">Auto-retry on Failure</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Retry failed downloads up to 3 times</p></div>
@@ -346,9 +340,12 @@
               </div>
               <div class="t-border border-t pt-8">
                 <h4 class="text-xs font-black uppercase t-text tracking-[0.15em] mb-6">Scheduling</h4>
-                <div class="flex items-center justify-between p-5 t-card rounded-2xl border">
-                  <div><p class="text-sm font-bold t-text">Bandwidth Scheduler</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Limit speed during working hours</p></div>
-                  <div (click)="toggleSetting('scheduler')" class="w-11 h-6 rounded-full relative cursor-pointer transition-colors" [ngClass]="toggles['scheduler'] ? 'bg-primary' : 'bg-zinc-800'"><div class="absolute top-1 left-1 w-4 h-4 rounded-full transition-transform" [ngClass]="toggles['scheduler'] ? 'translate-x-5 bg-zinc-950' : 'translate-x-0 bg-zinc-500'"></div></div>
+                <div class="flex items-center justify-between p-5 t-card rounded-2xl border opacity-60">
+                  <div class="flex items-center gap-3">
+                    <div><p class="text-sm font-bold t-text">Bandwidth Scheduler</p><p class="text-[10px] t-text-muted uppercase mt-0.5">Limit speed during working hours</p></div>
+                    <span class="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[8px] font-bold uppercase tracking-wider border border-primary/20">Coming Soon</span>
+                  </div>
+                  <div class="w-11 h-6 rounded-full relative cursor-not-allowed bg-zinc-800"><div class="absolute top-1 left-1 w-4 h-4 rounded-full bg-zinc-500"></div></div>
                 </div>
               </div>
             </div>
@@ -456,7 +453,12 @@
                 class="flex-1 py-3 border border-green-500/20 text-green-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-green-500/10 transition-all rounded-xl">
           Resume Stream
         </button>
-        <button (click)="deleteTask(selectedTask)"
+        <button *ngIf="selectedTask.status === 'Error'"
+                (click)="retryTask(selectedTask)"
+                class="flex-1 py-3 border border-primary/20 text-primary font-headline font-black uppercase tracking-widest text-[10px] hover:bg-primary/10 transition-all rounded-xl">
+          Retry Download
+        </button>
+        <button (click)="requestDelete(selectedTask)"
                 class="flex-1 py-3 border border-red-500/20 text-red-500 font-headline font-black uppercase tracking-widest text-[10px] hover:bg-red-500/10 transition-all rounded-xl">
           Delete Stream
         </button>
@@ -465,6 +467,29 @@
   </aside>
 
 
+
+  <!-- Delete Confirmation Modal (MISS-3) -->
+  <div *ngIf="showDeleteConfirm" class="fixed inset-0 z-[100] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/70 backdrop-blur-xl modal-backdrop-enter" (click)="cancelDelete()"></div>
+    <div class="glass-panel w-full max-w-sm p-6 sm:p-8 rounded-2xl relative z-10 modal-enter mx-4 text-center">
+      <div class="w-14 h-14 mx-auto mb-5 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+        <span class="material-symbols-outlined text-red-400 text-2xl">delete_forever</span>
+      </div>
+      <h3 class="text-lg font-headline font-bold t-text mb-2">Delete Download?</h3>
+      <p class="text-xs t-text-muted mb-6 leading-relaxed">
+        <span class="font-bold t-text">{{ pendingDeleteTask?.fileName }}</span><br>
+        This will remove the task and delete all temporary files. This action cannot be undone.
+      </p>
+      <div class="flex gap-3">
+        <button (click)="cancelDelete()" class="flex-1 py-3 t-card rounded-xl border font-headline font-bold uppercase tracking-widest text-[10px] t-text-sec hover:bg-white/5 transition-all">
+          Cancel
+        </button>
+        <button (click)="confirmDelete()" class="flex-1 py-3 bg-red-500 rounded-xl text-white font-headline font-bold uppercase tracking-widest text-[10px] hover:bg-red-600 active:scale-[0.98] transition-all">
+          Delete
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- Drag & Drop Overlay -->
   <div *ngIf="isDragging" class="drag-overlay">

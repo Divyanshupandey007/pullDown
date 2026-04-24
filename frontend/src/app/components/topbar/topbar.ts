@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, OnInit, Input } from '@angular/core';
+import { Component, Output, EventEmitter, OnInit, Input, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -9,6 +9,13 @@ import { FormsModule } from '@angular/forms';
   styleUrls: ['./topbar.css']
 })
 export class TopbarComponent implements OnInit {
+
+  @HostListener('document:click', ['$event'])
+  onDocumentClick(event: Event) {
+    // Close dropdowns when clicking outside
+    this.showNotifications = false;
+    this.showAccountMenu = false;
+  }
   @Input() aggregateSpeed: number = 0;
   @Input() taskCount: number = 0;
   @Input() currentToast: { message: string; icon: string; color: string; removing?: boolean } | null = null;
