@@ -1,10 +1,12 @@
 import { HttpClient } from '@angular/common/http';
-import { ChangeDetectorRef, Component, OnInit, ViewChild, ElementRef } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
+import { Subscription } from 'rxjs';
 import { ErrorMessage, ProgressMessage, Task, Websocket } from '../../services/websocket';
 import { SidebarComponent } from '../../components/sidebar/sidebar';
 import { TopbarComponent } from '../../components/topbar/topbar';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-download-manager',
@@ -12,7 +14,7 @@ import { TopbarComponent } from '../../components/topbar/topbar';
   templateUrl: './download-manager.html',
   styleUrl: './download-manager.css',
 })
-export class DownloadManager implements OnInit {
+export class DownloadManager implements OnInit, OnDestroy {
   urlInput: string = '';
 
   tasks: Task[] = [];
@@ -37,8 +39,19 @@ export class DownloadManager implements OnInit {
   currentToast: { message: string; icon: string; color: string; removing?: boolean } | null = null;
   private toastTimeout: any;
   private chartDrawScheduled = false;
+  private lastDetectChanges = 0;
+  private cachedCanvasWidth = 0;
+  private cachedCanvasHeight = 0;
+  private cachedAccentColor = '#fb923c';
   isDragging: boolean = false;
   activeMode: string = 'auto';
+
+  // Subscription management (MISS-5 fix)
+  private subscriptions: Subscription[] = [];
+
+  // Delete confirmation state (MISS-3 fix)
+  pendingDeleteTask: Task | null = null;
+  showDeleteConfirm: boolean = false;
 
   showModal: boolean = false;
   showDetails: boolean = false;
@@ -88,7 +101,7 @@ export class DownloadManager implements OnInit {
       notifError: this.toggles['notifError'],
       soundEffects: this.toggles['soundEffects']
     };
-    this.http.post('http://localhost:8080/settings', payload).subscribe({
+    this.http.post(`${environment.apiBaseUrl}/settings`, payload).subscribe({
       next: () => console.log('Settings saved'),
       error: (err) => console.error('Failed to save settings:', err)
     });
@@ -101,41 +114,47 @@ export class DownloadManager implements OnInit {
   ) { }
 
   ngOnInit() {
-    this.wsService.historyUpdates$.subscribe((loadedTasks: Task[]) => {
-      if (loadedTasks) {
-        this.tasks = loadedTasks.map(t => {
-          let initialPercent = 0;
-          if (t.totalSize > 0) {
-            initialPercent = (t.downloaded / t.totalSize) * 100;
-            initialPercent = Math.min(initialPercent, 100);
-          } else if (t.status === 'Completed') initialPercent = 100;
-          return { ...t, progress: initialPercent };
-        });
-        this.tasks.reverse();
-        if (this.tasks.length > 0) this.selectTask(this.tasks[0]);
-        this.updateStats();
-        this.cdr.detectChanges();
-      }
-    });
+    this.subscriptions.push(
+      this.wsService.historyUpdates$.subscribe((loadedTasks: Task[]) => {
+        if (loadedTasks) {
+          this.tasks = loadedTasks.map(t => {
+            let initialPercent = 0;
+            if (t.totalSize > 0) {
+              initialPercent = (t.downloaded / t.totalSize) * 100;
+              initialPercent = Math.min(initialPercent, 100);
+            } else if (t.status === 'Completed') initialPercent = 100;
+            return { ...t, progress: initialPercent };
+          });
+          this.tasks.reverse();
+          if (this.tasks.length > 0) this.selectTask(this.tasks[0]);
+          this.updateStats();
+          this.cdr.detectChanges();
+        }
+      })
+    );
 
-    this.wsService.progressUpdates$.subscribe((msg: ProgressMessage) => {
-      this.updateTask(msg);
-    });
+    this.subscriptions.push(
+      this.wsService.progressUpdates$.subscribe((msg: ProgressMessage) => {
+        this.updateTask(msg);
+      })
+    );
 
     // Handle download errors from backend
-    this.wsService.errorUpdates$.subscribe((msg: ErrorMessage) => {
-      const task = this.tasks.find(t => t.id === msg.id);
-      if (task) {
-        task.status = 'Error';
-        task.speed = 0;
-        this.updateStats();
-        this.cdr.detectChanges();
-        this.showToast(`${task.fileName} — ${msg.message}`, 'error', '#ef4444');
-      }
-    });
+    this.subscriptions.push(
+      this.wsService.errorUpdates$.subscribe((msg: ErrorMessage) => {
+        const task = this.tasks.find(t => t.id === msg.id);
+        if (task) {
+          task.status = 'Error';
+          task.speed = 0;
+          this.updateStats();
+          this.cdr.detectChanges();
+          this.showToast(`${task.fileName} — ${msg.message}`, 'error', '#ef4444');
+        }
+      })
+    );
 
     // Load settings from backend
-    this.http.get<any>('http://localhost:8080/settings').subscribe({
+    this.http.get<any>(`${environment.apiBaseUrl}/settings`).subscribe({
       next: (s) => {
         this.downloadPath = s.downloadPath;
         this.maxDownloads = s.maxDownloads;
@@ -161,6 +180,11 @@ export class DownloadManager implements OnInit {
       },
       error: (err) => console.error('Failed to load settings:', err)
     });
+  }
+
+  ngOnDestroy() {
+    this.subscriptions.forEach(sub => sub.unsubscribe());
+    this.subscriptions = [];
   }
 
   @ViewChild('urlInputField') urlInputField!: ElementRef<HTMLInputElement>;
@@ -340,7 +364,7 @@ export class DownloadManager implements OnInit {
       this.tasks.unshift(newTask);
       this.selectTask(newTask);
     } else { existing.status = 'Downloading'; }
-    this.http.post('http://localhost:8080/download', { url: url }).subscribe();
+    this.http.post(`${environment.apiBaseUrl}/download`, { url: url }).subscribe();
     this.showToast('Download started', 'download', 'var(--accent-color)');
     this.updateStats();
   }
@@ -351,7 +375,7 @@ export class DownloadManager implements OnInit {
     task.status = 'Paused';
     task.speed = 0;
     task.eta = 0;
-    this.http.post('http://localhost:8080/pause', { url: task.id }).subscribe();
+    this.http.post(`${environment.apiBaseUrl}/pause`, { url: task.id }).subscribe();
     this.showToast(task.fileName + ' paused', 'pause', '#eab308');
     this.updateStats();
   }
@@ -359,15 +383,26 @@ export class DownloadManager implements OnInit {
   resumeTask(task: Task, event?: Event) {
     if (event) event.stopPropagation();
     task.status = 'Downloading';
-    this.http.post('http://localhost:8080/resume', { url: task.id }).subscribe();
+    this.http.post(`${environment.apiBaseUrl}/resume`, { url: task.id }).subscribe();
     this.showToast(task.fileName + ' resumed', 'play_arrow', '#4ade80');
     this.updateStats();
   }
 
-  deleteTask(task: Task, event?: Event) {
+  // MISS-3: Delete with confirmation dialog
+  requestDelete(task: Task, event?: Event) {
     if (event) event.stopPropagation();
+    this.pendingDeleteTask = task;
+    this.showDeleteConfirm = true;
+  }
+
+  confirmDelete() {
+    if (!this.pendingDeleteTask) return;
+    const task = this.pendingDeleteTask;
     const name = task.fileName;
-    this.http.delete('http://localhost:8080/delete', { body: { url: task.id } }).subscribe({
+    this.showDeleteConfirm = false;
+    this.pendingDeleteTask = null;
+
+    this.http.delete(`${environment.apiBaseUrl}/delete`, { body: { url: task.id } }).subscribe({
       next: () => {
         this.tasks = this.tasks.filter(t => t.id !== task.id);
         if (this.selectedTask?.id === task.id) {
@@ -380,6 +415,22 @@ export class DownloadManager implements OnInit {
       },
       error: (e) => console.error('Delete failed', e)
     });
+  }
+
+  cancelDelete() {
+    this.showDeleteConfirm = false;
+    this.pendingDeleteTask = null;
+  }
+
+  // MISS-4: Retry errored downloads
+  retryTask(task: Task, event?: Event) {
+    if (event) event.stopPropagation();
+    task.status = 'Downloading';
+    // Don't reset progress — backend resumes from existing tmp files,
+    // the next WS progress message will set the real value
+    this.http.post(`${environment.apiBaseUrl}/download`, { url: task.url }).subscribe();
+    this.showToast(task.fileName + ' retrying...', 'refresh', 'var(--accent-color)');
+    this.updateStats();
   }
 
   //Bulk Actions
@@ -449,13 +500,20 @@ export class DownloadManager implements OnInit {
         this.detailTitle = task.fileName;
         this.detailProgress = task.progress;
       }
-      this.cdr.detectChanges();
+      // Throttle change detection to max once per 500ms
+      // Prevents Angular from restarting CSS animations on every WS message
+      const now = Date.now();
+      if (now - this.lastDetectChanges > 500) {
+        this.lastDetectChanges = now;
+        this.cdr.detectChanges();
+      }
     }
   }
 
   updateStats() {
     this.activeDownloadCount = this.tasks.filter(t => t.status === 'Downloading').length;
     this.completedCount = this.tasks.filter(t => t.status === 'Completed').length;
+    this.errorCount = this.tasks.filter(t => t.status === 'Error').length;
     this.totalDownloadedBytes = this.tasks.reduce((acc, t) => acc + (t.downloaded || 0), 0);
   }
 
@@ -465,12 +523,21 @@ export class DownloadManager implements OnInit {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Handle HiDPI
+    // Handle HiDPI — only resize canvas when container size actually changes
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
+    const newW = Math.round(rect.width * dpr);
+    const newH = Math.round(rect.height * dpr);
+    if (this.cachedCanvasWidth !== newW || this.cachedCanvasHeight !== newH) {
+      canvas.width = newW;
+      canvas.height = newH;
+      this.cachedCanvasWidth = newW;
+      this.cachedCanvasHeight = newH;
+      // Update accent color cache on resize too
+      this.cachedAccentColor = getComputedStyle(document.documentElement)
+        .getPropertyValue('--accent-color').trim() || '#fb923c';
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const w = rect.width;
     const h = rect.height;
@@ -517,7 +584,7 @@ export class DownloadManager implements OnInit {
     ctx.lineTo(last.x, last.y);
 
     // Stroke line
-    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() || '#fb923c';
+    const accentColor = this.cachedAccentColor;
     ctx.strokeStyle = accentColor;
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -624,9 +691,10 @@ export class DownloadManager implements OnInit {
     const config = themes[mode];
     document.documentElement.style.setProperty('--accent-color', config.accent);
     document.documentElement.style.setProperty('--glow-color', config.glow);
+    this.cachedAccentColor = config.accent;
 
     // Notify backend to adjust speed throttling
-    this.http.post('http://localhost:8080/mode', { mode }).subscribe({
+    this.http.post(`${environment.apiBaseUrl}/mode`, { mode }).subscribe({
       next: () => console.log(`Mode set to ${mode}`),
       error: (err) => console.error('Failed to set mode:', err)
     });

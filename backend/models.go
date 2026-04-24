@@ -18,8 +18,6 @@ type Settings struct {
 	ProxyPort       int    `json:"proxyPort"`
 	AutoStart       bool   `json:"autoStart"`
 	CompletionAlert bool   `json:"completionAlert"`
-	PortBinding     bool   `json:"portBinding"`
-	Encryption      bool   `json:"encryption"`
 	EnableProxy     bool   `json:"enableProxy"`
 	ForceHttps      bool   `json:"forceHttps"`
 	AutoExtract     bool   `json:"autoExtract"`
